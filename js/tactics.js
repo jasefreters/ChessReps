@@ -22,6 +22,14 @@ function loadSets() {
   return setsPromise;
 }
 
+/** Every puzzle in one list, easiest first. Themes stay hidden so each puzzle is a mystery. */
+function mixed(sets) {
+  const seen = new Set();
+  const all = [];
+  for (const c of sets.categories) for (const p of c.puzzles) if (!seen.has(p.id)) { seen.add(p.id); all.push(p); }
+  return all.sort((a, b) => a.rating - b.rating || (a.id < b.id ? -1 : 1));
+}
+
 const uciMove = (u) => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
 const colorName = (c) => (c === 'w' ? 'White' : 'Black');
 const RANK = { shown: 0, helped: 1, clean: 2 };
@@ -89,7 +97,7 @@ export function createTactics(ctx) {
         <div class="today-text">
           <p class="eyebrow">Tactical Weaknesses</p>
           <h1>Spot the weakness, then find the forcing move</h1>
-          <p class="sub">Each set trains one kind of weakness. Look for what's wrong in your opponent's position, then play checks, captures and threats on the board. Hint shows which piece to move; Solution plays out the answer.</p>
+          <p class="sub">There's no label telling you what to look for, just like in a real game. Find what's wrong in your opponent's position, then look for checks, captures and threats. Hint shows which piece to move; Solution plays out the answer.</p>
         </div>
       </div>
       <ul class="rep-list" id="tac-sets"><li class="empty">Loading puzzles…</li></ul>
@@ -112,22 +120,19 @@ export function createTactics(ctx) {
     try {
       const sets = await loadSets();
       if (document.getElementById('tac-sets') !== list) return;
-      list.innerHTML = sets.categories.map((c) => {
-        const pr = progressFor(c.puzzles.map((p) => p.id));
-        const lo = c.puzzles[0].rating;
-        const hi = c.puzzles[c.puzzles.length - 1].rating;
-        const pct = Math.round((pr.solved / c.puzzles.length) * 100);
-        return `
+      const all = mixed(sets);
+      const pr = progressFor(all.map((p) => p.id));
+      const pct = Math.round((pr.solved / all.length) * 100);
+      const label = pr.solved ? (pr.solved < all.length ? 'Continue' : 'Practise again') : 'Start';
+      list.innerHTML = `
         <li class="rep">
           <div class="rep-main">
-            <h3><a href="#puzzles-${c.id}">${esc(c.name)}</a></h3>
-            <p class="hint">${esc(c.blurb)}</p>
-            <p class="meta"><span>${plural(c.puzzles.length, 'puzzle')}</span><span>Rated ${lo}–${hi}</span><span>${pr.solved} solved</span><span>${pr.clean} first try</span></p>
+            <h3><a href="#puzzles-all">Mixed puzzles</a></h3>
+            <p class="meta"><span>${plural(all.length, 'puzzle')}</span><span>Rated ${all[0].rating}–${all[all.length - 1].rating}, easiest first</span><span>${pr.solved} solved</span><span>${pr.clean} first try</span></p>
             <div class="bar" role="img" aria-label="${pct}% solved"><span style="width:${pct}%"></span></div>
           </div>
-          <div class="rep-actions"><a class="btn ${pr.solved < c.puzzles.length ? 'primary' : ''}" href="#puzzles-${c.id}">${pr.solved ? (pr.solved < c.puzzles.length ? 'Continue' : 'Practise again') : 'Start'}</a></div>
+          <div class="rep-actions"><a class="btn ${pr.solved < all.length ? 'primary' : ''}" href="#puzzles-all">${label}</a></div>
         </li>`;
-      }).join('');
       list.insertAdjacentHTML('afterend', `<p class="hint credit">Puzzles from the <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noopener">Lichess puzzle database</a> (public domain).</p>`);
     } catch {
       if (document.getElementById('tac-sets') === list) {
@@ -157,11 +162,9 @@ export function createTactics(ctx) {
         return;
       }
       if (location.hash !== hash) return;
-      const c = sets.categories.find((x) => x.id === setId);
-      if (!c) return go('tactics');
-      puzzles = c.puzzles.map((p, i) => fromLichess(p, i, c.puzzles.length));
-      name = c.name;
-      blurb = c.blurb;
+      const all = mixed(sets);
+      puzzles = all.map((p, i) => fromLichess(p, i, all.length));
+      name = 'Mixed puzzles';
     }
     if (!puzzles.length) return go('tactics');
 
@@ -340,7 +343,7 @@ export function createTactics(ctx) {
         <h3 class="label">Moves played</h3>
         ${s.played.length ? `<p class="line">${s.played.map((m) => `<span class="ply">${esc(m)}</span>`).join(' ')}</p>` : '<p class="empty">None yet</p>'}
       </div>
-      ${s.p.url ? `<p class="hint"><a href="${s.p.url}" target="_blank" rel="noopener">Open this puzzle on Lichess</a></p>` : ''}`;
+      ${s.p.url && s.done ? `<p class="hint"><a href="${s.p.url}" target="_blank" rel="noopener">Open this puzzle on Lichess</a></p>` : ''}`;
   }
 
   // ------------------------------------------------------------ editor

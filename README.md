@@ -14,7 +14,7 @@ you miss come back sooner.
 - **Opening library**: search 3,865 named openings by name ("caro kann
   advance"), ECO code ("B12") or moves ("1. e4 c6 2. d4") to start a
   repertoire or add lines to one.
-- **Tactical Weaknesses**: 150 Lichess puzzles in six sets (unprotected
+- **Tactical Weaknesses**: 150 Lichess puzzles in one mixed set, easiest first, with no theme shown (drawn from unprotected
   pieces, pieces on the same line, exposed king, trapped pieces, overworked
   defenders, double attacks), with Hint, Solution and Retry. "Add a puzzle"
   has a setup board for entering your own puzzles; those stay in your browser.
