@@ -8,6 +8,7 @@ import { SAMPLES } from './samples.js';
 import { loadOpenings, searchOpenings, numbered, guessColor } from './library.js';
 import { PRESETS, presetLines, presetPgn } from './presets.js';
 import { createTactics } from './tactics.js';
+import { play, soundOn, setSound } from './sound.js';
 
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
@@ -655,6 +656,7 @@ function endLine() {
   s.awaiting = false;
   s.stats.lines++;
   s.emptyLines = s.graded ? 0 : s.emptyLines + 1;
+  if (s.graded) play('success');
   setStatus('Line complete', 'Next line coming up.', 'done');
   s.timer = setTimeout(() => { if (session === s) startLine(); }, 900);
 }
@@ -969,6 +971,21 @@ document.addEventListener('keydown', (e) => {
 });
 
 const tactics = createTactics({ app, getData: () => data, persist, toast, esc, plural, go });
+
+const soundBtn = document.getElementById('sound-toggle');
+function showSound() {
+  if (!soundBtn) return;
+  soundBtn.setAttribute('aria-pressed', String(soundOn()));
+  soundBtn.textContent = soundOn() ? 'Sound on' : 'Sound off';
+}
+if (soundBtn) {
+  soundBtn.addEventListener('click', () => {
+    setSound(!soundOn());
+    showSound();
+    if (soundOn()) play('move');
+  });
+  showSound();
+}
 
 window.addEventListener('hashchange', route);
 persist();

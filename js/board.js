@@ -2,6 +2,7 @@
 // last-move and feedback highlights, and arrows.
 
 import { PIECES } from './pieces.js';
+import { play } from './sound.js';
 
 const FILES = 'abcdefgh';
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -62,12 +63,20 @@ export class Board {
 
   /** Show the position of a chess.js instance (also used for legal moves). */
   setGame(game, lastMove = null) {
+    const before = this.pieces;
     this.game = game;
     this.lastMove = lastMove;
     this.selected = null;
     this.pieces = {};
     for (const row of game.board()) {
       for (const p of row) if (p) this.pieces[p.square] = p.color + p.type.toUpperCase();
+    }
+    // Sound only when a move actually changed the position.
+    const changed = Object.keys(before).length !== Object.keys(this.pieces).length ||
+      Object.entries(this.pieces).some(([sq, p]) => before[sq] !== p);
+    if (lastMove && changed && Object.keys(before).length) {
+      if (game.inCheck()) play('check');
+      else play(Object.keys(this.pieces).length < Object.keys(before).length ? 'capture' : 'move');
     }
     this.promo.hidden = true;
     this.render();
@@ -88,6 +97,8 @@ export class Board {
   }
 
   mark(square, kind, ms = 0) {
+    if (kind === 'bad') play('wrong');
+    if (kind === 'good') play('correct');
     this.marks[square] = kind;
     this.render();
     if (ms) {

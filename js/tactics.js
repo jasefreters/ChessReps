@@ -5,6 +5,7 @@
 import { Chess } from './chesslib.js';
 import { Board } from './board.js';
 import { PIECES } from './pieces.js';
+import { play } from './sound.js';
 
 let setsPromise = null;
 function loadSets() {
@@ -278,6 +279,7 @@ export function createTactics(ctx) {
     board.setArrows([]);
     const result = s.shown ? 'shown' : s.mistakes || s.hinted ? 'helped' : 'clean';
     record(result);
+    if (result !== 'shown') play('success');
     const title = { clean: 'Solved first try', helped: 'Solved', shown: 'Solution' }[result];
     setStatus(title, solutionText(s.p), result === 'shown' ? 'done' : 'good');
   }
