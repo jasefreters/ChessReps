@@ -5,6 +5,7 @@ import { importPgn, exportPgn } from './pgn.js';
 import { schedule, introduce, dayKey, startOfDay, DAY, MINUTE } from './srs.js';
 import { loadData, saveData, defaultData, normalize } from './store.js';
 import { SAMPLES } from './samples.js';
+import { loadOpenings, searchOpenings, numbered, guessColor } from './library.js';
 
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
@@ -184,6 +185,7 @@ function renderHome() {
     <div class="home-tools">
       <form id="new-rep-form" class="card form" autocomplete="off">
         <h2>New repertoire</h2>
+        ${pickerHtml('nr', 'Start from a named opening (optional)')}
         <div class="field">
           <label for="nr-name">Name</label>
           <input id="nr-name" name="name" required maxlength="60" placeholder="Queen's Gambit Declined">
@@ -276,7 +278,8 @@ function renderEdit(id) {
       </div>
       <div id="ed-body"></div>
       <details class="card tools">
-        <summary>Import or export PGN</summary>
+        <summary>Add openings, import or export PGN</summary>
+        ${pickerHtml('ed', 'Add a named opening')}
         <div class="field">
           <label for="ed-pgn">Paste PGN to add its lines here</label>
           <textarea id="ed-pgn" rows="5" spellcheck="false" placeholder="1. e4 e5 2. Nf3 Nc6 (2... d6) 3. Bb5 *"></textarea>
@@ -695,7 +698,95 @@ const actions = {
   hint: () => giveHint(),
   reveal: () => revealAnswer(),
   end: () => finish(),
+
+  'op-pick': (el) => pickOpening(el.dataset.target, Number(el.dataset.idx)),
 };
+
+// ---------------------------------------------------------------- opening library
+
+const picker = { list: null, results: {}, timer: null };
+
+function pickerHtml(target, label) {
+  return `
+  <div class="field picker">
+    <label for="${target}-op">${label}</label>
+    <input id="${target}-op" class="op-search" type="search" data-target="${target}" autocomplete="off" spellcheck="false"
+      placeholder="Caro-Kann Advance, B12 or 1. e4 c6 2. d4">
+    <div class="op-results" id="${target}-op-results"></div>
+  </div>`;
+}
+
+async function updatePicker(target) {
+  const input = document.getElementById(`${target}-op`);
+  const box = document.getElementById(`${target}-op-results`);
+  if (!input || !box) return;
+  if (!picker.list) {
+    box.innerHTML = '<p class="hint">Loading openings…</p>';
+    try {
+      picker.list = await loadOpenings();
+    } catch {
+      box.innerHTML = "<p class=\"hint\">The opening library couldn't be loaded. Check your connection, then click the search box again.</p>";
+      return;
+    }
+  }
+  const { results, total, popular } = searchOpenings(picker.list, input.value);
+  picker.results[target] = results;
+  if (!results.length) {
+    box.innerHTML = '<p class="hint">No openings match. Try fewer words, an ECO code like B12, or moves like 1. e4 c6.</p>';
+    return;
+  }
+  box.innerHTML = `
+    ${popular ? '<p class="label">Popular openings · type to search all 3,865</p>' : ''}
+    <ul class="op-list">${results.map((o, i) => `
+      <li><button type="button" class="op-item" data-act="op-pick" data-target="${target}" data-idx="${i}">
+        <span class="op-name">${esc(o.name)}</span><span class="op-eco">${esc(o.eco)}</span>
+        <span class="op-moves">${esc(numbered(o.moves))}</span>
+      </button></li>`).join('')}
+    </ul>
+    ${total > results.length ? `<p class="hint">Showing ${results.length} of ${total}. Keep typing to narrow it down.</p>` : ''}`;
+}
+
+function pickOpening(target, idx) {
+  const o = picker.results[target]?.[idx];
+  if (!o) return;
+  const pgn = `${numbered(o.moves)} *`;
+  const box = document.getElementById(`${target}-op-results`);
+  document.getElementById(`${target}-op`).value = '';
+  let note;
+  if (target === 'nr') {
+    const name = document.getElementById('nr-name');
+    if (!name.value.trim() || name.dataset.auto === '1') {
+      name.value = o.name;
+      name.dataset.auto = '1';
+    }
+    document.getElementById('nr-pgn').value = pgn;
+    const side = guessColor(o.name);
+    document.getElementById(side === 'b' ? 'nr-black' : 'nr-white').checked = true;
+    note = `Moves added below, playing as ${colorName(side)}. Change the side if that's wrong, then press Create.`;
+  } else {
+    const ta = document.getElementById('ed-pgn');
+    ta.value = ta.value.trim() ? `${ta.value.trim()}\n${pgn}` : pgn;
+    note = 'Moves added to the PGN box. Pick more, then press Add to repertoire.';
+  }
+  box.innerHTML = `<p class="picked"><strong>${esc(o.name)}</strong> <span class="op-eco">${esc(o.eco)}</span><br>${esc(note)}</p>`;
+}
+
+app.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (el.classList && el.classList.contains('op-search')) {
+    const box = document.getElementById(`${el.dataset.target}-op-results`);
+    if (box && !box.querySelector('.op-list')) updatePicker(el.dataset.target);
+  }
+});
+
+app.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.id === 'nr-name') el.dataset.auto = '0';
+  if (el.classList && el.classList.contains('op-search')) {
+    clearTimeout(picker.timer);
+    picker.timer = setTimeout(() => updatePicker(el.dataset.target), 120);
+  }
+});
 
 function importSummary(res) {
   const parts = [];
@@ -724,7 +815,7 @@ app.addEventListener('submit', (e) => {
   let note = `Created ${name}`;
   if (pgn.trim()) {
     const res = importPgn(rep, pgn);
-    note = res.added ? `Created ${name} with ${plural(res.added, 'move')}` : `Created ${name}. No moves found in the PGN.`;
+    note = res.added ? `Created ${name} with ${plural(R.stats(rep).positions, 'move')} to learn` : `Created ${name}. No moves found in the PGN.`;
   }
   data.repertoires.push(rep);
   persist();

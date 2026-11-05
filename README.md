@@ -11,6 +11,9 @@ you miss come back sooner.
 
 - **Repertoires for either side**: add moves by playing them on the board,
   or paste/load PGN (variations, comments and multiple games are handled).
+- **Opening library**: search 3,865 named openings by name ("caro kann
+  advance"), ECO code ("B12") or moves ("1. e4 c6 2. d4") to start a
+  repertoire or add lines to one.
 - **Training**: new moves are shown with an arrow first, then quizzed. Due
   moves are drilled inside real lines, with the opponent steering toward the
   branches you need to practise. Wrong moves can be retried, with a hint or
@@ -52,6 +55,7 @@ and pick the branch and the `/ (root)` folder. The site appears at
 | `js/srs.js` | Spaced-repetition scheduling |
 | `js/pgn.js` | PGN import (with variations) and export |
 | `js/store.js` | Saving, loading and backup validation |
+| `js/library.js`, `data/openings.json` | Named-opening search over the Lichess openings data |
 | `js/samples.js` | Example repertoires loaded on first visit |
 | `js/pieces.js` | Piece images |
 | `js/chesslib.js` | Loads [chess.js](https://github.com/jhlywa/chess.js) 1.4.0 from jsDelivr |

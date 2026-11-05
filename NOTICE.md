@@ -14,3 +14,9 @@ basis, without warranties or conditions of any kind.
 
 Move generation and validation use chess.js (https://github.com/jhlywa/chess.js),
 loaded at runtime from jsDelivr. Copyright (c) Jeff Hlywa. BSD 2-Clause licence.
+
+## Opening names
+
+`data/openings.json` is built from the lichess-org/chess-openings data set
+(https://github.com/lichess-org/chess-openings), which is in the public
+domain and released under the CC0 1.0 Public Domain Dedication.
