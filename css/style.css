@@ -645,3 +645,32 @@ input[type="search"] {
 }
 .section-head { display: grid; gap: 6px; max-width: 46rem; }
 .section-head .section-title { margin-top: 6px; }
+
+/* ---------- tactics */
+
+.topbar nav { display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
+.topbar nav a.active { color: var(--ink); }
+.tactics-hero {
+  background:
+    linear-gradient(90deg, var(--surface) 0 62%, transparent),
+    repeating-linear-gradient(45deg, var(--accent-soft) 0 10px, transparent 10px 20px) right / 40% 100% no-repeat,
+    var(--surface);
+}
+.bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; max-width: 320px; }
+.bar span { display: block; height: 100%; background: var(--good); }
+.credit { margin-top: -8px; }
+.my-puzzles { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-width: 520px; }
+.my-puzzles li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.palette { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.palette-btn {
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background-color: var(--sq-light);
+  background-size: 86%;
+  background-position: center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.palette-btn.on { outline: 3px solid var(--accent); outline-offset: 1px; }
+.palette-btn.erase { grid-column: span 2; aspect-ratio: auto; background: var(--surface); font-weight: 600; font-size: 0.85rem; min-height: 38px; }

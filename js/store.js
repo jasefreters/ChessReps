@@ -8,6 +8,8 @@ export function defaultData() {
     settings: { newPerDay: 10 },
     repertoires: [],
     daily: { date: '', newSeen: 0 },
+    myPuzzles: [],
+    puzzleProgress: {},
   };
 }
 
@@ -25,6 +27,10 @@ export function normalize(d) {
     ...base,
     settings: { ...base.settings, ...(d.settings || {}) },
     daily: { ...base.daily, ...(d.daily || {}) },
+    myPuzzles: Array.isArray(d.myPuzzles)
+      ? d.myPuzzles.filter((p) => p && typeof p.id === 'string' && typeof p.fen === 'string' && Array.isArray(p.line))
+      : [],
+    puzzleProgress: d.puzzleProgress && typeof d.puzzleProgress === 'object' ? d.puzzleProgress : {},
     repertoires,
   };
 }

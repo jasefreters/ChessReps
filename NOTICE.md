@@ -20,3 +20,9 @@ loaded at runtime from jsDelivr. Copyright (c) Jeff Hlywa. BSD 2-Clause licence.
 `data/openings.json` is built from the lichess-org/chess-openings data set
 (https://github.com/lichess-org/chess-openings), which is in the public
 domain and released under the CC0 1.0 Public Domain Dedication.
+
+## Puzzles
+
+`data/puzzles.json` is a selection from the Lichess puzzle database
+(https://database.lichess.org/#puzzles), released under the CC0 1.0 Public
+Domain Dedication.

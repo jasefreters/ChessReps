@@ -7,6 +7,7 @@ import { loadData, saveData, defaultData, normalize } from './store.js';
 import { SAMPLES } from './samples.js';
 import { loadOpenings, searchOpenings, numbered, guessColor } from './library.js';
 import { PRESETS, presetLines, presetPgn } from './presets.js';
+import { createTactics } from './tactics.js';
 
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
@@ -121,13 +122,22 @@ const arrowOf = (edge, kind) => ({ from: edge.uci.slice(0, 2), to: edge.uci.slic
 // ---------------------------------------------------------------- routing
 
 function route() {
+  tactics.cleanup();
   if (session && session.timer) clearTimeout(session.timer);
   session = null;
   editor = null;
   board = null;
   ui.pendingDelete = ui.pendingRemove = ui.pendingRestore = null;
   const h = location.hash.replace(/^#/, '');
-  if (h.startsWith('edit-')) renderEdit(h.slice(5));
+  document.querySelectorAll('.topbar nav a').forEach((a) => {
+    const target = a.getAttribute('href').slice(1);
+    const onTactics = h === 'tactics' || h.startsWith('puzzle');
+    a.classList.toggle('active', target === 'tactics' ? onTactics : !onTactics);
+  });
+  if (h === 'tactics') tactics.renderIndex();
+  else if (h === 'puzzle-new') tactics.renderEditor();
+  else if (h.startsWith('puzzles-')) tactics.renderSet(h.slice(8));
+  else if (h.startsWith('edit-')) renderEdit(h.slice(5));
   else if (h === 'train-all') renderTrain(null);
   else if (h.startsWith('train-')) renderTrain(h.slice(6));
   else renderHome();
@@ -957,6 +967,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') editorJump(Math.max(0, editor.sans.length - 1));
   if (e.key === 'Home') editorJump(0);
 });
+
+const tactics = createTactics({ app, getData: () => data, persist, toast, esc, plural, go });
 
 window.addEventListener('hashchange', route);
 persist();

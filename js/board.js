@@ -73,6 +73,15 @@ export class Board {
     this.render();
   }
 
+  /** Show pieces without a game (position setup). `map` is square -> 'wK' etc. */
+  setPieces(map) {
+    this.game = null;
+    this.lastMove = null;
+    this.selected = null;
+    this.pieces = { ...map };
+    this.render();
+  }
+
   setArrows(list) {
     this.arrows = list;
     this.renderArrows();
@@ -178,6 +187,11 @@ export class Board {
     if (!this.promo.hidden) return;
     const sq = this.squareFromEvent(e);
     if (!sq) return;
+    if (this.opts.onSquareClick) {
+      e.preventDefault();
+      this.opts.onSquareClick(sq);
+      return;
+    }
     if (this.selected && this.selected !== sq && this.legalFrom(this.selected).some((m) => m.to === sq)) {
       e.preventDefault();
       this.tryMove(this.selected, sq);
