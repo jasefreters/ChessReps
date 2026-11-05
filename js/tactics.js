@@ -22,11 +22,21 @@ function loadSets() {
   return setsPromise;
 }
 
+/** The weakness each puzzle exploits, revealed once the puzzle is finished. */
+const WEAKNESSES = {
+  hanging: { name: 'Unprotected pieces', text: 'A piece nobody defends can simply be taken, or attacked with tempo.' },
+  line: { name: 'Pieces on the same line', text: 'Pieces lined up on a rank, file or diagonal invite pins, skewers and discovered attacks.' },
+  king: { name: 'Exposed king', text: 'A king with few defenders or no escape squares is open to checks and mating attacks.' },
+  trapped: { name: 'Trapped pieces', text: 'A piece with no safe squares can be attacked and won.' },
+  overload: { name: 'Overworked defenders', text: 'A defender doing two jobs can be lured away or removed.' },
+  fork: { name: 'Double attacks', text: 'One move that attacks two targets at once, such as a fork by a knight, queen or pawn.' },
+};
+
 /** Every puzzle in one list, easiest first. Themes stay hidden so each puzzle is a mystery. */
 function mixed(sets) {
   const seen = new Set();
   const all = [];
-  for (const c of sets.categories) for (const p of c.puzzles) if (!seen.has(p.id)) { seen.add(p.id); all.push(p); }
+  for (const c of sets.categories) for (const p of c.puzzles) if (!seen.has(p.id)) { seen.add(p.id); all.push({ ...p, weakness: c.id }); }
   return all.sort((a, b) => a.rating - b.rating || (a.id < b.id ? -1 : 1));
 }
 
@@ -39,11 +49,12 @@ function fromLichess(p, i, n) {
   return {
     id: p.id, title: `Puzzle ${i + 1} of ${n}`, meta: `Rated ${p.rating}`,
     fen: p.fen, lead: moves[0], line: moves.slice(1), url: `https://lichess.org/training/${p.id}`,
+    weakness: p.weakness || null,
   };
 }
 
 function fromMine(p, i, n) {
-  return { id: p.id, title: p.title || `Puzzle ${i + 1}`, meta: `${i + 1} of ${n}`, fen: p.fen, lead: null, line: p.line };
+  return { id: p.id, title: p.title || `Puzzle ${i + 1}`, meta: `${i + 1} of ${n}`, fen: p.fen, lead: null, line: p.line, weakness: p.weakness || null };
 }
 
 /** The solution in notation with real move numbers, e.g. "12... Bxd2+ 13. Bxd2 Qxg4". */
@@ -339,6 +350,12 @@ export function createTactics(ctx) {
         <button class="btn" type="button" data-tac="prev" ${n > 1 ? '' : 'disabled'}>← Previous</button>
         <button class="btn ${s.done ? 'primary' : ''}" type="button" data-tac="next" ${n > 1 ? '' : 'disabled'}>Next puzzle →</button>
       </div>
+      ${s.done && WEAKNESSES[s.p.weakness] ? `
+      <div class="weakness">
+        <p class="label">The weakness</p>
+        <p class="weakness-name">${esc(WEAKNESSES[s.p.weakness].name)}</p>
+        <p class="hint">${esc(WEAKNESSES[s.p.weakness].text)}</p>
+      </div>` : ''}
       <div class="block">
         <h3 class="label">Moves played</h3>
         ${s.played.length ? `<p class="line">${s.played.map((m) => `<span class="ply">${esc(m)}</span>`).join(' ')}</p>` : '<p class="empty">None yet</p>'}
@@ -461,6 +478,13 @@ export function createTactics(ctx) {
           <button class="btn ghost" type="button" data-tac="ed-back">Back to setup</button>
         </div>
         <div class="field">
+          <label for="pe-weak">Weakness (shown after solving)</label>
+          <select id="pe-weak">
+            <option value="">Not set</option>
+            ${Object.entries(WEAKNESSES).map(([id, w]) => `<option value="${id}" ${s.weakness === id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
           <label for="pe-title">Name</label>
           <input id="pe-title" maxlength="80" value="${esc(s.title)}" placeholder="Chapter 1 · Puzzle 1">
         </div>
@@ -550,7 +574,8 @@ export function createTactics(ctx) {
     'ed-save': () => {
       const title = document.getElementById('pe-title').value.trim();
       const data = getData();
-      data.myPuzzles.push({ id: `my-${Math.random().toString(36).slice(2, 10)}`, title, fen: s.fen, line: s.line.slice(), created: Date.now() });
+      const weakness = document.getElementById('pe-weak').value || null;
+      data.myPuzzles.push({ id: `my-${Math.random().toString(36).slice(2, 10)}`, title, weakness, fen: s.fen, line: s.line.slice(), created: Date.now() });
       persist();
       toast(`Saved ${title || 'puzzle'}`);
       // Ready for the next one: keep the editor open with a clear board.
@@ -572,6 +597,7 @@ export function createTactics(ctx) {
   });
   app.addEventListener('change', (e) => {
     if (s && s.kind === 'editor' && e.target.name === 'pe-side') s.side = e.target.value;
+    if (s && s.kind === 'editor' && e.target.id === 'pe-weak') s.weakness = e.target.value;
   });
   app.addEventListener('input', (e) => {
     if (s && s.kind === 'editor' && e.target.id === 'pe-title') s.title = e.target.value;
