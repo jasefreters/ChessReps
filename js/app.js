@@ -6,6 +6,7 @@ import { schedule, introduce, dayKey, startOfDay, DAY, MINUTE } from './srs.js';
 import { loadData, saveData, defaultData, normalize } from './store.js';
 import { SAMPLES } from './samples.js';
 import { loadOpenings, searchOpenings, numbered, guessColor } from './library.js';
+import { PRESETS, presetLines, presetPgn } from './presets.js';
 
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
@@ -182,6 +183,12 @@ function renderHome() {
     <h2 class="section-title">Repertoires</h2>
     ${rows.length ? `<ul class="rep-list">${rows.map(repRow).join('')}</ul>` : '<p class="empty">No repertoires yet.</p>'}
 
+    <div class="section-head">
+      <h2 class="section-title">Ready-made repertoires</h2>
+      <p class="hint">Every named line in the opening from the Lichess library. Where several moves are listed for your side, training accepts any of them. New lines added later can be pulled in without losing progress.</p>
+    </div>
+    <ul class="rep-list" id="preset-list">${PRESETS.map((p) => presetRow(p, null)).join('')}</ul>
+
     <div class="home-tools">
       <form id="new-rep-form" class="card form" autocomplete="off">
         <h2>New repertoire</h2>
@@ -227,6 +234,85 @@ function renderHome() {
       </div>
     </div>
   </section>`;
+  fillPresets();
+}
+
+// ---------------------------------------------------------------- ready-made repertoires
+
+const presetCache = {};
+
+function presetRow(p, info) {
+  let action;
+  if (!info) action = '<button class="btn" type="button" disabled>Loading…</button>';
+  else if (!info.existing) action = `<button class="btn primary" type="button" data-act="preset-add" data-id="${p.id}">Add to my repertoires</button>`;
+  else if (info.missing) action = `<button class="btn primary" type="button" data-act="preset-add" data-id="${p.id}">Add ${plural(info.missing, 'new move')}</button>`;
+  else action = `<a class="btn" href="#edit-${info.existing.id}">Added · Edit</a>`;
+  const meta = info
+    ? `<span>${plural(info.lines, 'line')}</span><span>${plural(info.positions, 'move')} for you to learn</span>`
+    : '<span>Counting lines…</span>';
+  return `
+  <li class="rep preset">
+    <div class="rep-main">
+      ${sideChip(p.color)}
+      <h3>${esc(p.name)}</h3>
+      <p class="meta">${meta}</p>
+    </div>
+    <div class="rep-actions">${action}</div>
+  </li>`;
+}
+
+async function presetData(p) {
+  if (!presetCache[p.id]) {
+    const openings = await loadOpenings();
+    const pgn = presetPgn(p, openings);
+    const rep = R.createRepertoire({ name: p.name, color: p.color });
+    importPgn(rep, pgn);
+    presetCache[p.id] = { pgn, rep, lines: presetLines(p, openings).length, positions: R.stats(rep).positions };
+  }
+  return presetCache[p.id];
+}
+
+async function fillPresets() {
+  const list = document.getElementById('preset-list');
+  if (!list) return;
+  try {
+    const rows = [];
+    for (const p of PRESETS) {
+      const d = await presetData(p);
+      const existing = data.repertoires.find((r) => r.presetId === p.id) || null;
+      let missing = 0;
+      if (existing) {
+        for (const [key, node] of Object.entries(d.rep.nodes)) {
+          for (const san of Object.keys(node.moves)) if (!existing.nodes[key]?.moves[san]) missing++;
+        }
+      }
+      rows.push(presetRow(p, { lines: d.lines, positions: d.positions, existing, missing }));
+    }
+    if (document.getElementById('preset-list') === list) list.innerHTML = rows.join('');
+  } catch {
+    if (document.getElementById('preset-list') === list) {
+      list.innerHTML = "<li class=\"empty\">The opening library couldn't be loaded. Check your connection and reload the page.</li>";
+    }
+  }
+}
+
+async function addPreset(id) {
+  const p = PRESETS.find((x) => x.id === id);
+  if (!p) return;
+  const d = await presetData(p);
+  let rep = data.repertoires.find((r) => r.presetId === p.id);
+  if (rep) {
+    const res = importPgn(rep, d.pgn);
+    toast(`Added ${plural(res.added, 'new move')} to ${rep.name}`);
+  } else {
+    rep = R.createRepertoire({ name: p.name, color: p.color });
+    rep.presetId = p.id;
+    importPgn(rep, d.pgn);
+    data.repertoires.push(rep);
+    toast(`Added ${p.name}: ${plural(R.stats(rep).positions, 'move')} to learn`);
+  }
+  persist();
+  renderHome();
 }
 
 function repRow({ rep, s }) {
@@ -700,6 +786,10 @@ const actions = {
   end: () => finish(),
 
   'op-pick': (el) => pickOpening(el.dataset.target, Number(el.dataset.idx)),
+  'preset-add': (el) => {
+    el.disabled = true;
+    addPreset(el.dataset.id);
+  },
 };
 
 // ---------------------------------------------------------------- opening library

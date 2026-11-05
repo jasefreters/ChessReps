@@ -643,3 +643,5 @@ input[type="search"] {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+.section-head { display: grid; gap: 6px; max-width: 46rem; }
+.section-head .section-title { margin-top: 6px; }
