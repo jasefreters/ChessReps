@@ -707,14 +707,16 @@ function renderTrainPanel() {
   panel.innerHTML = `
     <a class="back" href="#home">← All repertoires</a>
     <div class="panel-head">${sideChip(s.rep.color)}<h2 class="panel-title">${esc(s.rep.name)}</h2></div>
-    <div class="status tone-${s.status.tone}">
-      <p class="status-title">${esc(s.status.title)}</p>
-      <p class="status-text">${esc(s.status.text)}</p>
-    </div>
-    <div class="row">
-      <button class="btn" type="button" data-act="hint" ${canHelp && !s.hinted ? '' : 'disabled'}>Hint</button>
-      <button class="btn" type="button" data-act="reveal" ${canHelp ? '' : 'disabled'}>Show move</button>
-      <button class="btn ghost" type="button" data-act="end">End session</button>
+    <div class="dock">
+      <div class="status tone-${s.status.tone}">
+        <p class="status-title">${esc(s.status.title)}</p>
+        <p class="status-text">${esc(s.status.text)}</p>
+      </div>
+      <div class="row dock-actions">
+        <button class="btn" type="button" data-act="hint" ${canHelp && !s.hinted ? '' : 'disabled'}>Hint</button>
+        <button class="btn" type="button" data-act="reveal" ${canHelp ? '' : 'disabled'}>Show move</button>
+        <button class="btn ghost" type="button" data-act="end">End</button>
+      </div>
     </div>
     ${statsHtml}
     <div class="block">
@@ -975,8 +977,12 @@ const tactics = createTactics({ app, getData: () => data, persist, toast, esc, p
 const soundBtn = document.getElementById('sound-toggle');
 function showSound() {
   if (!soundBtn) return;
-  soundBtn.setAttribute('aria-pressed', String(soundOn()));
-  soundBtn.textContent = soundOn() ? 'Sound on' : 'Sound off';
+  const on = soundOn();
+  soundBtn.setAttribute('aria-pressed', String(on));
+  soundBtn.setAttribute('aria-label', on ? 'Sound on' : 'Sound off');
+  soundBtn.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h3l4-3.5v11L6 12H3z"/>${on
+    ? '<path d="M13 7.5a3.5 3.5 0 0 1 0 5M15.2 5.3a6.5 6.5 0 0 1 0 9.4"/>'
+    : '<path d="m13 8 4 4m0-4-4 4"/>'}</svg><span class="sound-label">${on ? 'Sound on' : 'Sound off'}</span>`;
 }
 if (soundBtn) {
   soundBtn.addEventListener('click', () => {

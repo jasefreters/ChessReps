@@ -339,18 +339,21 @@ export function createTactics(ctx) {
         ${badge}
       </div>
       ${s.blurb ? `<p class="hint">${esc(s.blurb)}</p>` : ''}
-      <div class="status tone-${s.status.tone}">
-        <p class="status-title">${esc(s.status.title)}</p>
-        <p class="status-text">${esc(s.status.text)}</p>
+      <div class="dock">
+        <div class="status tone-${s.status.tone}">
+          <p class="status-title">${esc(s.status.title)}<span class="dock-count">${s.i + 1}/${n}</span></p>
+          <p class="status-text">${esc(s.status.text)}</p>
+          ${s.done && WEAKNESSES[s.p.weakness] ? `<p class="dock-weakness">Weakness: <strong>${esc(WEAKNESSES[s.p.weakness].name)}</strong></p>` : ''}
+        </div>
+        <div class="row dock-actions">
+          <button class="btn" type="button" data-tac="hint" ${s.awaiting && !s.hinted ? '' : 'disabled'}>Hint</button>
+          <button class="btn" type="button" data-tac="solution" ${s.done || s.shown ? 'disabled' : ''}>Solution</button>
+          <button class="btn ghost" type="button" data-tac="retry">Retry</button>
+          <button class="btn ${s.done ? 'primary' : ''} dock-next" type="button" data-tac="next" ${n > 1 ? '' : 'disabled'}>Next →</button>
+        </div>
       </div>
       <div class="row">
-        <button class="btn" type="button" data-tac="hint" ${s.awaiting && !s.hinted ? '' : 'disabled'}>Hint</button>
-        <button class="btn" type="button" data-tac="solution" ${s.done || s.shown ? 'disabled' : ''}>Solution</button>
-        <button class="btn ghost" type="button" data-tac="retry">Retry</button>
-      </div>
-      <div class="row">
-        <button class="btn" type="button" data-tac="prev" ${n > 1 ? '' : 'disabled'}>← Previous</button>
-        <button class="btn ${s.done ? 'primary' : ''}" type="button" data-tac="next" ${n > 1 ? '' : 'disabled'}>Next puzzle →</button>
+        <button class="btn ghost" type="button" data-tac="prev" ${n > 1 ? '' : 'disabled'}>← Previous puzzle</button>
       </div>
       ${s.done && WEAKNESSES[s.p.weakness] ? `
       <div class="weakness">
