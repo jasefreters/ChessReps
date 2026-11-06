@@ -56,12 +56,7 @@ function refreshDaily() {
 }
 
 function newBudget() {
-  return Math.max(0, (Number(data.settings.newPerDay) || 0) + (data.daily.extra || 0) - data.daily.newSeen);
-}
-
-/** How many extra new moves a "Learn more" press adds for today. */
-function moreChunk() {
-  return Number(data.settings.newPerDay) || 10;
+  return Infinity; // no daily limit: training introduces new moves for as long as you keep going
 }
 
 function findRep(id) {
@@ -180,9 +175,6 @@ function renderHome() {
   } else if (newReady) {
     headline = `${plural(newReady, 'new move')} to learn`;
     sub = 'Nothing is due for review.';
-  } else if (fresh) {
-    headline = "Today's new moves are done";
-    sub = `You've learned ${plural(data.daily.newSeen, 'new move')} today and nothing is due. Keep going with more, or come back tomorrow.`;
   } else {
     headline = 'All caught up';
     sub = Number.isFinite(nextDue) ? `Next review ${when(nextDue)}.` : 'Add moves to a repertoire to start training.';
@@ -197,9 +189,7 @@ function renderHome() {
         <h1>${esc(headline)}</h1>
         <p class="sub">${esc(sub)}</p>
       </div>
-      ${due + newReady || !fresh
-        ? `<button class="btn primary big" type="button" data-act="train-all" ${due + newReady ? '' : 'disabled'}>Start training</button>`
-        : `<button class="btn primary big" type="button" data-act="learn-more">Learn ${Math.min(moreChunk(), fresh)} more</button>`}
+      <button class="btn primary big" type="button" data-act="train-all" ${due + newReady ? '' : 'disabled'}>Start training</button>
     </div>
 
     <h2 class="section-title">Repertoires</h2>
@@ -236,11 +226,6 @@ function renderHome() {
 
       <div class="card settings">
         <h2>Settings</h2>
-        <div class="field">
-          <label for="set-new">New moves per day</label>
-          <input id="set-new" type="number" min="0" max="100" inputmode="numeric" value="${esc(data.settings.newPerDay)}">
-          <p class="hint">How many unseen positions training introduces each day. ${data.daily.newSeen} introduced today.</p>
-        </div>
         <h3>Backup</h3>
         <p class="hint">Your repertoires and progress are saved in this browser only. Download a backup to keep them safe or to move them to another device.</p>
         <div class="row">
@@ -341,9 +326,7 @@ function repRow({ rep, s }) {
   const learnable = Math.min(s.fresh, newBudget());
   const canTrain = s.due + learnable > 0;
   const label = s.due ? `Review ${s.due}` : learnable ? `Learn ${learnable} new` : 'Up to date';
-  const trainBtn = !canTrain && s.fresh
-    ? `<button class="btn primary" type="button" data-act="learn-more" data-id="${rep.id}">Learn ${Math.min(moreChunk(), s.fresh)} more</button>`
-    : `<button class="btn ${canTrain ? 'primary' : ''}" type="button" data-act="train" data-id="${rep.id}" ${canTrain ? '' : 'disabled'}>${label}</button>`;
+  const trainBtn = `<button class="btn ${canTrain ? 'primary' : ''}" type="button" data-act="train" data-id="${rep.id}" ${canTrain ? '' : 'disabled'}>${label}</button>`;
   const next = !s.due && Number.isFinite(s.nextDue) ? `<span>Next review ${when(s.nextDue)}</span>` : '';
   return `
   <li class="rep">
@@ -717,7 +700,7 @@ function renderTrainPanel() {
       ${statsHtml}
       <p class="hint">${Number.isFinite(next) ? `Next review ${esc(when(next))}.` : 'Add more moves to keep training.'}</p>
       <div class="row">
-        ${moreLeft ? `<button class="btn primary" type="button" data-act="learn-more" ${single ? `data-id="${single}"` : ''}>Learn ${Math.min(moreChunk(), moreLeft)} more</button>` : ''}
+        ${moreLeft ? `<button class="btn primary" type="button" data-act="train" data-id="${single || ''}" ${single ? '' : 'data-all="1"'}>Keep going</button>` : ''}
         <a class="btn ${moreLeft ? '' : 'primary'}" href="#home">Back to repertoires</a>
       </div>`;
     return;
@@ -749,13 +732,7 @@ function renderTrainPanel() {
 
 const actions = {
   'train-all': () => go('train-all'),
-  'learn-more': (el) => {
-    refreshDaily();
-    data.daily.extra = (data.daily.extra || 0) + moreChunk();
-    persist();
-    go(el.dataset.id ? `train-${el.dataset.id}` : 'train-all');
-  },
-  train: (el) => go(`train-${el.dataset.id}`),
+  train: (el) => go(el.dataset.all ? 'train-all' : `train-${el.dataset.id}`),
   'ask-delete': (el) => { ui.pendingDelete = el.dataset.id; renderHome(); },
   delete: (el) => {
     const rep = findRep(el.dataset.id);
@@ -955,14 +932,6 @@ app.addEventListener('submit', (e) => {
 
 app.addEventListener('change', async (e) => {
   const el = e.target;
-  if (el.id === 'set-new') {
-    const n = Math.max(0, Math.min(100, Math.round(Number(el.value) || 0)));
-    data.settings.newPerDay = n;
-    el.value = n;
-    persist();
-    toast(`New moves per day: ${n}`);
-    return;
-  }
   if (el.id === 'rep-name' && editor) {
     const name = el.value.trim();
     if (name) {

@@ -24,7 +24,7 @@ you miss come back sooner.
   the answer if you need it.
 - **Scheduling**: a simplified SM-2. Right first time pushes a move out
   (1 day, 3 days, then roughly ×2.5); a miss brings it back within minutes.
-  The number of new moves per day is configurable.
+  There is no daily limit on new moves: keep going as long as you like.
 - **Saved in the browser** (localStorage), with JSON backup and restore, and
   PGN export per repertoire.
 - Works on phones; light and dark themes follow the device.
