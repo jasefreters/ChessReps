@@ -96,26 +96,95 @@ export function stats(rep, now = Date.now()) {
 }
 
 /**
- * Positions to drill this session: everything due (including learning cards
- * coming due in the next few minutes), plus up to `newBudget` new positions,
- * earliest in the opening first.
+ * Positions to drill: everything due (including learning cards coming due in
+ * the next few minutes), plus the unseen positions in `newKeys` (the lines
+ * currently being memorised).
  */
-export function computeTargets(rep, now, newBudget) {
+export function computeTargets(rep, now, newKeys) {
   const targets = new Set();
-  let budget = newBudget;
   for (const key of bfsOrder(rep)) {
     if (!isUserPosition(rep, key)) continue;
     const c = rep.cards[key];
     if (!c || c.state === 'new') {
-      if (budget > 0) {
-        targets.add(key);
-        budget--;
-      }
+      if (newKeys && newKeys.has(key)) targets.add(key);
     } else if (c.due <= now + LOOKAHEAD) {
       targets.add(key);
     }
   }
   return targets;
+}
+
+/** Weight of an opponent move: named theory behind it (ready-made repertoires) or main line first. */
+function edgeWeight(rep, key, san, index) {
+  const w = rep.weights && rep.weights[`${key}|${san}`];
+  return w || (index === 0 ? 2 : 1);
+}
+
+/**
+ * Every complete line, from the first move to the end, most likely first.
+ * `prob` multiplies the share of each opponent reply along the way, so the
+ * lines you are most likely to meet come first.
+ */
+export function lines(rep, limit = 2000) {
+  const out = [];
+  const seen = new Set([rep.root]);
+  const walk = (key, moves, keys, prob) => {
+    if (out.length >= limit) return;
+    const list = edges(rep, key).filter(([, e]) => !seen.has(e.to));
+    if (!list.length) {
+      if (moves.length) out.push({ moves, keys, endKey: key, prob });
+      return;
+    }
+    const opponent = sideToMove(key) !== rep.color;
+    const total = opponent ? list.reduce((a, [san], i) => a + edgeWeight(rep, key, san, i), 0) : 1;
+    list.forEach(([san, e], i) => {
+      seen.add(e.to);
+      walk(e.to, [...moves, san], [...keys, key], prob * (opponent ? edgeWeight(rep, key, san, i) / total : 1));
+      seen.delete(e.to);
+    });
+  };
+  walk(rep.root, [], [], 1);
+  out.forEach((l, i) => {
+    l.order = i;
+    l.id = l.moves.join(' ');
+    l.userKeys = l.keys.filter((k) => sideToMove(k) === rep.color);
+  });
+  return out.sort((a, b) => b.prob - a.prob || a.order - b.order);
+}
+
+/** 'memorised' (every move of yours graduated), 'learning' (some seen) or 'new'. */
+export function lineStatus(rep, line) {
+  let seen = 0;
+  let learned = 0;
+  for (const k of line.userKeys) {
+    const c = rep.cards[k];
+    if (c && c.state !== 'new') seen++;
+    if (c && c.state === 'review') learned++;
+  }
+  if (learned === line.userKeys.length) return 'memorised';
+  return seen ? 'learning' : 'new';
+}
+
+/** The `n` highest-priority lines not yet memorised, and their unseen positions. */
+export function activeBatch(rep, n = 3) {
+  const all = lines(rep);
+  const active = all.filter((l) => lineStatus(rep, l) !== 'memorised').slice(0, n);
+  const newKeys = new Set();
+  for (const l of active) {
+    for (const k of l.userKeys) {
+      const c = rep.cards[k];
+      if (!c || c.state === 'new') newKeys.add(k);
+    }
+  }
+  return { all, active, newKeys };
+}
+
+/** A line's name: the deepest named opening along it, if the repertoire has names. */
+export function lineName(rep, line) {
+  if (!rep.names) return null;
+  const keys = [...line.keys, line.endKey];
+  for (let i = keys.length - 1; i >= 0; i--) if (rep.names[keys[i]]) return rep.names[keys[i]];
+  return null;
 }
 
 /** How many targets can still be reached from `key` (including itself). */

@@ -86,3 +86,8 @@ export function schedule(card, grade, now = Date.now(), rand = Math.random) {
   c.due = addDays(now, interval);
   return c;
 }
+
+/** True when a card you've seen is due for review now. */
+export function isDue(card, now = Date.now()) {
+  return Boolean(card) && card.state !== 'new' && card.due <= now;
+}

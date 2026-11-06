@@ -6,6 +6,7 @@ import { schedule, introduce, dayKey, startOfDay, DAY, MINUTE } from './srs.js';
 import { loadData, saveData, defaultData, normalize } from './store.js';
 import { SAMPLES } from './samples.js';
 import { loadOpenings, searchOpenings, numbered, guessColor } from './library.js';
+import { isDue } from './srs.js';
 import { PRESETS, buildPreset, mergeInto, trimExisting } from './presets.js';
 import { createTactics } from './tactics.js';
 import { play, soundOn, setSound } from './sound.js';
@@ -55,8 +56,14 @@ function refreshDaily() {
   }
 }
 
-function newBudget() {
-  return Infinity; // no daily limit: training introduces new moves for as long as you keep going
+/** How many lines are memorised at a time. */
+const BATCH = 3;
+
+/** What training would cover now: due reviews plus the current batch of lines. */
+function workFor(rep, now = Date.now()) {
+  const batch = R.activeBatch(rep, BATCH);
+  const targets = R.computeTargets(rep, now, batch.newKeys);
+  return { batch, targets };
 }
 
 function findRep(id) {
@@ -64,8 +71,7 @@ function findRep(id) {
 }
 
 function hasWork(rep) {
-  const s = R.stats(rep);
-  return s.due > 0 || (s.fresh > 0 && newBudget() > 0);
+  return workFor(rep).targets.size > 0;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -141,6 +147,11 @@ function route() {
   else if (h === 'puzzle-new') tactics.renderEditor();
   else if (h.startsWith('puzzles-')) tactics.renderSet(h.slice(8));
   else if (h.startsWith('edit-')) renderEdit(h.slice(5));
+  else if (h.startsWith('lines-')) renderLines(h.slice(6));
+  else if (/^practise-[a-z0-9]+-\d+$/.test(h)) {
+    const [, id, n] = h.split('-');
+    renderTrain(id, Number(n));
+  }
   else if (h === 'train-all') renderTrain(null);
   else if (h.startsWith('train-')) renderTrain(h.slice(6));
   else renderHome();
@@ -157,11 +168,10 @@ function go(hash) {
 function renderHome() {
   refreshDaily();
   const now = Date.now();
-  const budget = newBudget();
-  const rows = data.repertoires.map((rep) => ({ rep, s: R.stats(rep, now) }));
+  const rows = data.repertoires.map((rep) => ({ rep, s: R.stats(rep, now), w: workFor(rep, now) }));
   const due = rows.reduce((a, r) => a + r.s.due, 0);
-  const fresh = rows.reduce((a, r) => a + r.s.fresh, 0);
-  const newReady = Math.min(fresh, budget);
+  const newLines = rows.reduce((a, r) => a + (r.w.batch.newKeys.size ? r.w.batch.active.length : 0), 0);
+  const newReady = rows.reduce((a, r) => a + r.w.targets.size, 0) - due;
   const nextDue = Math.min(Infinity, ...rows.map((r) => r.s.nextDue));
 
   let headline;
@@ -171,10 +181,10 @@ function renderHome() {
     sub = 'Create one below, then add moves on the board or paste a PGN.';
   } else if (due) {
     headline = `${plural(due, 'move')} to review`;
-    sub = newReady ? `Plus ${plural(newReady, 'new move')} to learn.` : 'Review them before they slip.';
-  } else if (newReady) {
-    headline = `${plural(newReady, 'new move')} to learn`;
-    sub = 'Nothing is due for review.';
+    sub = newLines ? `Plus ${plural(newLines, 'new line')} to learn.` : 'Review them before they slip.';
+  } else if (newReady > 0) {
+    headline = newLines ? `${plural(newLines, 'new line')} to learn` : 'Finish the lines you started';
+    sub = `${BATCH} lines at a time from each repertoire, the ones you're most likely to meet first.`;
   } else {
     headline = 'All caught up';
     sub = Number.isFinite(nextDue) ? `Next review ${when(nextDue)}.` : 'Add moves to a repertoire to start training.';
@@ -189,7 +199,7 @@ function renderHome() {
         <h1>${esc(headline)}</h1>
         <p class="sub">${esc(sub)}</p>
       </div>
-      <button class="btn primary big" type="button" data-act="train-all" ${due + newReady ? '' : 'disabled'}>Start training</button>
+      <button class="btn primary big" type="button" data-act="train-all" ${due + newReady > 0 ? '' : 'disabled'}>Start training</button>
     </div>
 
     <h2 class="section-title">Repertoires</h2>
@@ -291,6 +301,14 @@ async function fillPresets() {
         existing.trimmed = true;
         if (removed) trimmed.push(`${existing.name} (${removed} alternatives removed)`);
       }
+      // Line ranking and names arrived later; give older copies the same data.
+      if (existing && (existing.rankedV !== 2)) {
+        mergeInto(existing, { nodes: {}, weights: d.rep.weights, names: d.rep.names });
+        trimExisting(existing, d); // picks up preference fixes (e.g. 8.d4 instead of the Rice Gambit)
+        mergeInto(existing, d.rep);
+        existing.rankedV = 2;
+        persist();
+      }
       let missing = 0;
       if (existing) {
         for (const [key, node] of Object.entries(d.rep.nodes)) {
@@ -325,6 +343,7 @@ async function addPreset(id) {
     rep = R.createRepertoire({ name: p.name, color: p.color });
     rep.presetId = p.id;
     rep.trimmed = true;
+    rep.rankedV = 2;
     mergeInto(rep, d.rep);
     data.repertoires.push(rep);
     toast(`Added ${p.name}: ${plural(R.stats(rep).positions, 'move')} to learn`);
@@ -333,10 +352,13 @@ async function addPreset(id) {
   renderHome();
 }
 
-function repRow({ rep, s }) {
-  const learnable = Math.min(s.fresh, newBudget());
-  const canTrain = s.due + learnable > 0;
-  const label = s.due ? `Review ${s.due}` : learnable ? `Learn ${learnable} new` : 'Up to date';
+function repRow({ rep, s, w }) {
+  const { batch, targets } = w;
+  const memorised = batch.all.filter((l) => R.lineStatus(rep, l) === 'memorised').length;
+  const canTrain = targets.size > 0;
+  const label = s.due ? `Review ${s.due}`
+    : batch.newKeys.size ? `Learn ${plural(batch.active.length, 'line')}`
+      : canTrain ? 'Continue' : 'Up to date';
   const trainBtn = `<button class="btn ${canTrain ? 'primary' : ''}" type="button" data-act="train" data-id="${rep.id}" ${canTrain ? '' : 'disabled'}>${label}</button>`;
   const next = !s.due && Number.isFinite(s.nextDue) ? `<span>Next review ${when(s.nextDue)}</span>` : '';
   return `
@@ -344,10 +366,11 @@ function repRow({ rep, s }) {
     <div class="rep-main">
       ${sideChip(rep.color)}
       <h3><a href="#edit-${rep.id}">${esc(rep.name)}</a></h3>
-      <p class="meta"><span>${plural(s.positions, 'move')}</span><span class="${s.due ? 'is-due' : ''}">${s.due} due</span><span>${s.fresh} new</span>${next}</p>
+      <p class="meta"><span>${memorised} of ${plural(batch.all.length, 'line')} memorised</span><span class="${s.due ? 'is-due' : ''}">${s.due} due</span>${next}</p>
     </div>
     <div class="rep-actions">
       ${trainBtn}
+      <a class="btn" href="#lines-${rep.id}">Lines</a>
       <a class="btn" href="#edit-${rep.id}">Edit</a>
       <button class="btn ghost" type="button" data-act="ask-delete" data-id="${rep.id}">Delete</button>
     </div>
@@ -488,11 +511,55 @@ function editorJump(count) {
   updateEditor();
 }
 
+// ---------------------------------------------------------------- lines
+
+function renderLines(id) {
+  const rep = findRep(id);
+  if (!rep) return go('home');
+  const { batch, targets } = workFor(rep);
+  const activeIds = new Set(batch.active.map((l) => l.id));
+  const memorised = batch.all.filter((l) => R.lineStatus(rep, l) === 'memorised').length;
+  const label = { memorised: 'Memorised', learning: 'Started', new: 'Not started' };
+  app.innerHTML = `
+  <section class="home lines-page">
+    <a class="back" href="#home">← All repertoires</a>
+    <div class="section-head">
+      ${sideChip(rep.color)}
+      <h1 class="panel-title">${esc(rep.name)}</h1>
+      <p class="meta"><span>${plural(batch.all.length, 'line')}</span><span>${memorised} memorised</span></p>
+      <p class="hint">Most likely lines first. Training teaches ${BATCH} at a time; practise any line whenever you like.</p>
+    </div>
+    <div class="row">
+      <button class="btn primary" type="button" data-act="train" data-id="${rep.id}" ${targets.size ? '' : 'disabled'}>${batch.newKeys.size ? `Learn the next ${plural(batch.active.length, 'line')}` : 'Train'}</button>
+      <a class="btn" href="#edit-${rep.id}">Edit moves</a>
+    </div>
+    ${batch.all.length ? `<ol class="line-list">${batch.all.map((l, i) => {
+      const st = activeIds.has(l.id) ? 'active' : R.lineStatus(rep, l);
+      const name = R.lineName(rep, l);
+      return `
+      <li class="line-item">
+        <span class="line-no">${i + 1}</span>
+        <div class="line-main">
+          <p class="line-name">${esc(name || `Line ${i + 1}`)} <span class="chip chip-${st}">${st === 'active' ? 'Learning now' : label[st]}</span></p>
+          <p class="line-moves">${esc(numbered(l.moves.join(' ')))}</p>
+        </div>
+        <a class="btn small" href="#practise-${rep.id}-${i}">Practise</a>
+      </li>`;
+    }).join('')}</ol>` : '<p class="empty">No lines yet. Add moves in the editor.</p>'}
+  </section>`;
+}
+
 // ---------------------------------------------------------------- training
 
-function renderTrain(id) {
+function renderTrain(id, practiseIndex = null) {
   refreshDaily();
   if (id && !findRep(id)) return go('home');
+  let practise = null;
+  if (practiseIndex !== null) {
+    const all = R.lines(findRep(id));
+    if (!all[practiseIndex]) return go(`lines-${id}`);
+    practise = { index: practiseIndex, line: all[practiseIndex], total: all.length };
+  }
   const queue = id ? [id] : data.repertoires.filter(hasWork).map((r) => r.id);
   app.innerHTML = `
   <section class="workspace">
@@ -509,6 +576,7 @@ function renderTrain(id) {
     line: [], lastMove: null, timer: null, emptyLines: 0, graded: 0, done: false,
     status: { title: '', text: '', tone: '' },
     stats: { reviewed: 0, correct: 0, learned: 0, lines: 0 },
+    practise, batch: null, newKeys: null,
   };
   nextRepertoire();
 }
@@ -519,6 +587,11 @@ function nextRepertoire() {
   if (s.qi >= s.queue.length) return finish();
   s.rep = findRep(s.queue[s.qi]);
   s.emptyLines = 0;
+  if (!s.practise) {
+    // Fix this session's batch of lines so it stays at three until they're memorised.
+    s.batch = R.activeBatch(s.rep, BATCH);
+    s.newKeys = s.batch.newKeys;
+  }
   board.setOrientation(s.rep.color);
   startLine();
 }
@@ -526,7 +599,15 @@ function nextRepertoire() {
 function startLine() {
   const s = session;
   if (!s) return;
-  s.targets = R.computeTargets(s.rep, Date.now(), newBudget());
+  if (s.practise) {
+    s.key = s.rep.root;
+    s.line = [];
+    s.lastMove = null;
+    showTrainPosition();
+    step();
+    return;
+  }
+  s.targets = R.computeTargets(s.rep, Date.now(), s.newKeys);
   if (!s.targets.size || s.emptyLines >= 3) {
     s.qi++;
     nextRepertoire();
@@ -550,10 +631,15 @@ function step() {
   const s = session;
   if (!s || s.done) return;
   const { rep, key } = s;
-  if (R.countReachable(rep, key, s.targets) === 0) return endLine();
+  const fixed = s.practise && s.practise.line;
+  if (fixed) {
+    if (s.line.length >= fixed.moves.length || !rep.nodes[key]?.moves[fixed.moves[s.line.length]]) return endPractise();
+  } else if (R.countReachable(rep, key, s.targets) === 0) return endLine();
 
   if (R.sideToMove(key) !== rep.color) {
-    const pick = R.pickOpponentMove(rep, key, s.targets);
+    const pick = fixed
+      ? { san: fixed.moves[s.line.length], edge: rep.nodes[key].moves[fixed.moves[s.line.length]] }
+      : R.pickOpponentMove(rep, key, s.targets);
     if (!pick) return endLine();
     s.awaiting = false;
     if (!s.line.length) setStatus('Opponent to move', `You play ${colorName(rep.color)}.`, 'wait');
@@ -568,7 +654,7 @@ function step() {
     return;
   }
 
-  const moves = R.edges(rep, key);
+  const moves = expectedMoves();
   if (!moves.length) return endLine();
   const card = rep.cards[key];
   s.intro = !card || card.state === 'new';
@@ -585,6 +671,15 @@ function step() {
   }
 }
 
+/** Your moves accepted here: the line's move when practising, otherwise any repertoire move. */
+function expectedMoves() {
+  const s = session;
+  const all = R.edges(s.rep, s.key);
+  if (!s.practise) return all;
+  const san = s.practise.line.moves[s.line.length];
+  return all.filter(([m]) => m === san);
+}
+
 function trainMove(m) {
   const s = session;
   if (!s || !s.awaiting) return false;
@@ -594,7 +689,12 @@ function trainMove(m) {
   } catch {
     return false;
   }
-  const edge = s.rep.nodes[s.key]?.moves[mv.san];
+  const expected = expectedMoves();
+  const edge = expected.find(([san]) => san === mv.san)?.[1];
+  if (!edge && s.rep.nodes[s.key]?.moves[mv.san]) {
+    setStatus(`${mv.san} is also in your repertoire`, `This line continues with ${expected.map(([san]) => san).join(' or ')}.`, 'ask');
+    return false;
+  }
   if (!edge) {
     s.mistakes++;
     board.mark(mv.to, 'bad', 700);
@@ -606,7 +706,7 @@ function trainMove(m) {
 
   const now = Date.now();
   const key = s.key;
-  const wasTarget = s.targets.has(key);
+  const wasTarget = s.practise ? isDue(s.rep.cards[key], now) : s.targets.has(key);
   let title = 'Correct';
   let tone = 'good';
   if (s.intro) {
@@ -644,7 +744,7 @@ function revealAnswer() {
   const s = session;
   if (!s || !s.awaiting) return;
   s.shown = true;
-  const moves = R.edges(s.rep, s.key);
+  const moves = expectedMoves();
   board.setArrows(moves.map(([, e]) => arrowOf(e, 'answer')));
   const names = moves.map(([san]) => R.formatMove(s.line.length, san)).join(' or ');
   setStatus('Here is your move', `Your repertoire plays ${names}. Play it to continue.`, 'bad');
@@ -654,7 +754,7 @@ function giveHint() {
   const s = session;
   if (!s || !s.awaiting) return;
   s.hinted = true;
-  for (const [, e] of R.edges(s.rep, s.key)) board.mark(e.uci.slice(0, 2), 'hint');
+  for (const [, e] of expectedMoves()) board.mark(e.uci.slice(0, 2), 'hint');
   setStatus('Hint', 'Move the highlighted piece.', 'ask');
 }
 
@@ -667,6 +767,16 @@ function endLine() {
   if (s.graded) play('success');
   setStatus('Line complete', 'Next line coming up.', 'done');
   s.timer = setTimeout(() => { if (session === s) startLine(); }, 900);
+}
+
+function endPractise() {
+  const s = session;
+  if (!s) return;
+  s.awaiting = false;
+  s.done = true;
+  board.setArrows([]);
+  play('success');
+  renderTrainPanel();
 }
 
 function finish() {
@@ -692,35 +802,70 @@ function renderTrainPanel() {
   const acc = st.reviewed ? `${Math.round((st.correct / st.reviewed) * 100)}%` : '–';
   const statsHtml = `
     <dl class="stats">
-      ${s.done ? '' : `<div><dt>Left</dt><dd>${s.rep ? R.computeTargets(s.rep, Date.now(), newBudget()).size : 0}</dd></div>`}
+      ${s.done || s.practise ? '' : `<div><dt>Left</dt><dd>${s.rep ? R.computeTargets(s.rep, Date.now(), s.newKeys).size : 0}</dd></div>`}
       <div><dt>Reviewed</dt><dd>${st.reviewed}</dd></div>
       <div><dt>Accuracy</dt><dd>${acc}</dd></div>
       <div><dt>Learned</dt><dd>${st.learned}</dd></div>
     </dl>`;
+
+  if (s.done && s.practise) {
+    const { index, line, total } = s.practise;
+    const name = R.lineName(s.rep, line);
+    panel.innerHTML = `
+      <a class="back" href="#lines-${s.rep.id}">← All lines</a>
+      <p class="eyebrow">Line ${index + 1} of ${total} · complete</p>
+      <h1 class="panel-title">${esc(name || s.rep.name)}</h1>
+      <p class="line">${esc(numbered(line.moves.join(' ')))}</p>
+      ${statsHtml}
+      <div class="dock">
+        <div class="row dock-actions">
+          <button class="btn" type="button" data-act="practise-again">Again</button>
+          ${index + 1 < total ? `<a class="btn primary" href="#practise-${s.rep.id}-${index + 1}">Next line →</a>` : ''}
+          <a class="btn ghost" href="#lines-${s.rep.id}">All lines</a>
+        </div>
+      </div>`;
+    return;
+  }
 
   if (s.done) {
     const next = Math.min(Infinity, ...data.repertoires.map((r) => R.stats(r).nextDue));
     const didSomething = st.reviewed + st.learned > 0;
     const single = s.queue.length === 1 ? s.queue[0] : null;
     const pool = single ? [findRep(single)].filter(Boolean) : data.repertoires;
-    const moreLeft = pool.reduce((a, r) => a + R.stats(r).fresh, 0);
+    const moreLeft = pool.reduce((a, r) => a + R.activeBatch(r, BATCH).newKeys.size, 0);
+    const batchList = single && s.batch && s.batch.active.length ? `
+      <div class="block">
+        <h3 class="label">This session's lines</h3>
+        <ol class="line-list compact">${s.batch.active.map((l) => {
+          const st = R.lineStatus(s.rep, l);
+          return `<li><span class="chip chip-${st}">${st === 'memorised' ? 'Memorised' : 'Still learning'}</span> ${esc(R.lineName(s.rep, l) || numbered(l.moves.slice(0, 6).join(' ')))}</li>`;
+        }).join('')}</ol>
+      </div>` : '';
     panel.innerHTML = `
       <a class="back" href="#home">← All repertoires</a>
       <p class="eyebrow">Session complete</p>
       <h1 class="panel-title">${didSomething ? 'Done for now' : 'Nothing to train'}</h1>
       ${statsHtml}
+      ${batchList}
       <p class="hint">${Number.isFinite(next) ? `Next review ${esc(when(next))}.` : 'Add more moves to keep training.'}</p>
       <div class="row">
-        ${moreLeft ? `<button class="btn primary" type="button" data-act="train" data-id="${single || ''}" ${single ? '' : 'data-all="1"'}>Keep going</button>` : ''}
+        ${moreLeft ? `<button class="btn primary" type="button" data-act="train" data-id="${single || ''}" ${single ? '' : 'data-all="1"'}>Next ${BATCH} lines</button>` : ''}
+        ${single ? `<a class="btn" href="#lines-${single}">All lines</a>` : ''}
         <a class="btn ${moreLeft ? '' : 'primary'}" href="#home">Back to repertoires</a>
       </div>`;
     return;
   }
 
   const canHelp = s.awaiting && !s.intro && !s.shown;
+  const p = s.practise;
+  const head = p
+    ? `<a class="back" href="#lines-${s.rep.id}">← All lines</a>
+       <div class="panel-head"><p class="eyebrow">Practising line ${p.index + 1} of ${p.total}</p><h2 class="panel-title">${esc(R.lineName(s.rep, p.line) || s.rep.name)}</h2></div>`
+    : `<a class="back" href="#home">← All repertoires</a>
+       <div class="panel-head">${sideChip(s.rep.color)}<h2 class="panel-title">${esc(s.rep.name)}</h2>
+       ${s.batch && s.batch.active.length ? `<p class="hint">Memorising ${plural(s.batch.active.length, 'line')}: ${s.batch.active.map((l) => esc(R.lineName(s.rep, l) || numbered(l.moves.slice(0, 4).join(' ')))).join(' · ')}</p>` : ''}</div>`;
   panel.innerHTML = `
-    <a class="back" href="#home">← All repertoires</a>
-    <div class="panel-head">${sideChip(s.rep.color)}<h2 class="panel-title">${esc(s.rep.name)}</h2></div>
+    ${head}
     <div class="dock">
       <div class="status tone-${s.status.tone}">
         <p class="status-title">${esc(s.status.title)}</p>
@@ -809,6 +954,7 @@ const actions = {
   },
   'ed-download': () => download(`${editor.rep.name.replace(/[^\w-]+/g, '-') || 'repertoire'}.pgn`, exportPgn(editor.rep), 'application/x-chess-pgn'),
 
+  'practise-again': () => route(),
   hint: () => giveHint(),
   reveal: () => revealAnswer(),
   end: () => finish(),

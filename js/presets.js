@@ -27,6 +27,7 @@ export const PRESETS = [
     prefer: {
       'e4 e5 f4 exf4 Nf3 g5': 'h4', // Kieseritzky, not the Muzio knight sacrifice
       'e4 e5 f4 exf4 Nf3 d6': 'd4', // main line against the Fischer Defence
+      'e4 e5 f4 exf4 Nf3 g5 h4 g4 Ne5 Nf6 Bc4 d5 exd5 Bd6': 'd4', // not the dubious Rice Gambit (8.O-O)
     },
   },
 ];
@@ -70,6 +71,19 @@ export function buildPreset(preset, openings) {
     for (const s of sans) if (s !== keep) delete node.moves[s];
   }
   R.prune(rep);
+
+  // Keep the theory counts (to rank lines) and the opening names (to label them).
+  rep.weights = {};
+  rep.names = {};
+  for (const [k, node] of Object.entries(rep.nodes)) {
+    for (const san of Object.keys(node.moves)) if (count[`${k}|${san}`]) rep.weights[`${k}|${san}`] = count[`${k}|${san}`];
+  }
+  for (const o of lines) {
+    const c = new Chess();
+    try { for (const m of o.moves.split(' ')) c.move(m); } catch { continue; }
+    const k = R.posKey(c.fen());
+    if (rep.nodes[k] && !rep.names[k]) rep.names[k] = o.name;
+  }
   return { full, rep, lines: lines.length };
 }
 
@@ -86,6 +100,8 @@ export function mergeInto(target, source) {
       if (!target.nodes[e.to]) target.nodes[e.to] = { moves: {} };
     }
   }
+  target.weights = { ...(target.weights || {}), ...(source.weights || {}) };
+  target.names = { ...(target.names || {}), ...(source.names || {}) };
   return added;
 }
 

@@ -18,6 +18,12 @@ you miss come back sooner.
   pieces, pieces on the same line, exposed king, trapped pieces, overworked
   defenders, double attacks), with Hint, Solution and Retry. "Add a puzzle"
   has a setup board for entering your own puzzles; those stay in your browser.
+- **Lines, 3 at a time**: each repertoire is split into complete lines,
+  ranked so the ones you're most likely to meet come first (ready-made
+  repertoires use the amount of named Lichess theory behind each opponent
+  reply; your own repertoires use the order of the moves). Training teaches
+  three lines at a time until they're memorised, then offers the next three.
+  The Lines page lists every line with its status and a Practise button.
 - **Training**: new moves are shown with an arrow first, then quizzed. Due
   moves are drilled inside real lines, with the opponent steering toward the
   branches you need to practise. Wrong moves can be retried, with a hint or
