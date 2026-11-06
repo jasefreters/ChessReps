@@ -6,7 +6,7 @@ import { schedule, introduce, dayKey, startOfDay, DAY, MINUTE } from './srs.js';
 import { loadData, saveData, defaultData, normalize } from './store.js';
 import { SAMPLES } from './samples.js';
 import { loadOpenings, searchOpenings, numbered, guessColor } from './library.js';
-import { PRESETS, presetLines, presetPgn } from './presets.js';
+import { PRESETS, buildPreset, mergeInto, trimExisting } from './presets.js';
 import { createTactics } from './tactics.js';
 import { play, soundOn, setSound } from './sound.js';
 
@@ -197,7 +197,7 @@ function renderHome() {
 
     <div class="section-head">
       <h2 class="section-title">Ready-made repertoires</h2>
-      <p class="hint">Every named line in the opening from the Lichess library. Where several moves are listed for your side, training accepts any of them. New lines added later can be pulled in without losing progress.</p>
+      <p class="hint">Built from the Lichess opening library: one move for you in every position, the one with the most theory behind it, and every reply your opponent might try. New lines added later can be pulled in without losing progress.</p>
     </div>
     <ul class="rep-list" id="preset-list">${PRESETS.map((p) => presetRow(p, null)).join('')}</ul>
 
@@ -255,7 +255,7 @@ function presetRow(p, info) {
   else if (info.missing) action = `<button class="btn primary" type="button" data-act="preset-add" data-id="${p.id}">Add ${plural(info.missing, 'new move')}</button>`;
   else action = `<a class="btn" href="#edit-${info.existing.id}">Added · Edit</a>`;
   const meta = info
-    ? `<span>${plural(info.lines, 'line')}</span><span>${plural(info.positions, 'move')} for you to learn</span>`
+    ? `<span>From ${plural(info.lines, 'Lichess line')}</span><span>${plural(info.positions, 'move')} for you to learn, one per position</span>`
     : '<span>Counting lines…</span>';
   return `
   <li class="rep preset">
@@ -270,11 +270,8 @@ function presetRow(p, info) {
 
 async function presetData(p) {
   if (!presetCache[p.id]) {
-    const openings = await loadOpenings();
-    const pgn = presetPgn(p, openings);
-    const rep = R.createRepertoire({ name: p.name, color: p.color });
-    importPgn(rep, pgn);
-    presetCache[p.id] = { pgn, rep, lines: presetLines(p, openings).length, positions: R.stats(rep).positions };
+    const built = buildPreset(p, await loadOpenings());
+    presetCache[p.id] = { ...built, positions: R.stats(built.rep).positions };
   }
   return presetCache[p.id];
 }
@@ -284,9 +281,16 @@ async function fillPresets() {
   if (!list) return;
   try {
     const rows = [];
+    const trimmed = [];
     for (const p of PRESETS) {
       const d = await presetData(p);
       const existing = data.repertoires.find((r) => r.presetId === p.id) || null;
+      // Repertoires added before trimming existed get trimmed once, keeping progress.
+      if (existing && !existing.trimmed) {
+        const removed = trimExisting(existing, d);
+        existing.trimmed = true;
+        if (removed) trimmed.push(`${existing.name} (${removed} alternatives removed)`);
+      }
       let missing = 0;
       if (existing) {
         for (const [key, node] of Object.entries(d.rep.nodes)) {
@@ -294,6 +298,12 @@ async function fillPresets() {
         }
       }
       rows.push(presetRow(p, { lines: d.lines, positions: d.positions, existing, missing }));
+    }
+    if (trimmed.length) {
+      persist();
+      toast(`Trimmed to one move per position: ${trimmed.join(', ')}`);
+      if (document.getElementById('preset-list') === list) renderHome();
+      return;
     }
     if (document.getElementById('preset-list') === list) list.innerHTML = rows.join('');
   } catch {
@@ -309,12 +319,13 @@ async function addPreset(id) {
   const d = await presetData(p);
   let rep = data.repertoires.find((r) => r.presetId === p.id);
   if (rep) {
-    const res = importPgn(rep, d.pgn);
-    toast(`Added ${plural(res.added, 'new move')} to ${rep.name}`);
+    const added = mergeInto(rep, d.rep);
+    toast(`Added ${plural(added, 'new move')} to ${rep.name}`);
   } else {
     rep = R.createRepertoire({ name: p.name, color: p.color });
     rep.presetId = p.id;
-    importPgn(rep, d.pgn);
+    rep.trimmed = true;
+    mergeInto(rep, d.rep);
     data.repertoires.push(rep);
     toast(`Added ${p.name}: ${plural(R.stats(rep).positions, 'move')} to learn`);
   }
