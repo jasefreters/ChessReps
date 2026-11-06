@@ -39,6 +39,8 @@ let board = null;
 let editor = null;
 let session = null;
 let toastTimer = null;
+/** Pause before the opponent answers a correct move: just long enough to see your move land. */
+const REPLY_DELAY = 150;
 
 function persist() {
   storageOk = saveData(data);
@@ -556,7 +558,7 @@ function step() {
       s.key = pick.edge.to;
       showTrainPosition();
       step();
-    }, 450);
+    }, s.line.length ? REPLY_DELAY : 450); // quick reply mid-line; a short pause at the start of a line
     return;
   }
 
@@ -628,7 +630,7 @@ function trainMove(m) {
   showTrainPosition();
   board.mark(mv.to, 'good', 600);
   setStatus(title, R.formatMove(s.line.length - 1, mv.san), tone);
-  s.timer = setTimeout(() => { if (session === s) step(); }, 350);
+  s.timer = setTimeout(() => { if (session === s) step(); }, 0);
   return true;
 }
 

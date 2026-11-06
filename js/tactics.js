@@ -44,6 +44,8 @@ function mixed(sets) {
 const uciMove = (u) => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
 const colorName = (c) => (c === 'w' ? 'White' : 'Black');
 const RANK = { shown: 0, helped: 1, clean: 2 };
+/** Pause before the opponent answers a correct move: just long enough to see your move land. */
+const REPLY_DELAY = 150;
 
 function fromLichess(p, i, n) {
   const moves = p.moves.split(' ');
@@ -262,7 +264,7 @@ export function createTactics(ctx) {
       if (s.idx >= s.p.line.length) return solved();
       s.awaiting = true;
       setStatus('Correct', `Your opponent replied ${r.san}. Find the next move.`, 'ask');
-    }, 550);
+    }, REPLY_DELAY);
     return true;
   }
 
