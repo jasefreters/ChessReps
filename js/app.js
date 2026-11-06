@@ -56,7 +56,12 @@ function refreshDaily() {
 }
 
 function newBudget() {
-  return Math.max(0, (Number(data.settings.newPerDay) || 0) - data.daily.newSeen);
+  return Math.max(0, (Number(data.settings.newPerDay) || 0) + (data.daily.extra || 0) - data.daily.newSeen);
+}
+
+/** How many extra new moves a "Learn more" press adds for today. */
+function moreChunk() {
+  return Number(data.settings.newPerDay) || 10;
 }
 
 function findRep(id) {
@@ -175,10 +180,12 @@ function renderHome() {
   } else if (newReady) {
     headline = `${plural(newReady, 'new move')} to learn`;
     sub = 'Nothing is due for review.';
+  } else if (fresh) {
+    headline = "Today's new moves are done";
+    sub = `You've learned ${plural(data.daily.newSeen, 'new move')} today and nothing is due. Keep going with more, or come back tomorrow.`;
   } else {
     headline = 'All caught up';
     sub = Number.isFinite(nextDue) ? `Next review ${when(nextDue)}.` : 'Add moves to a repertoire to start training.';
-    if (fresh && !budget) sub += ` New moves resume tomorrow (${data.settings.newPerDay} a day).`;
   }
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -190,7 +197,9 @@ function renderHome() {
         <h1>${esc(headline)}</h1>
         <p class="sub">${esc(sub)}</p>
       </div>
-      <button class="btn primary big" type="button" data-act="train-all" ${due + newReady ? '' : 'disabled'}>Start training</button>
+      ${due + newReady || !fresh
+        ? `<button class="btn primary big" type="button" data-act="train-all" ${due + newReady ? '' : 'disabled'}>Start training</button>`
+        : `<button class="btn primary big" type="button" data-act="learn-more">Learn ${Math.min(moreChunk(), fresh)} more</button>`}
     </div>
 
     <h2 class="section-title">Repertoires</h2>
@@ -332,6 +341,9 @@ function repRow({ rep, s }) {
   const learnable = Math.min(s.fresh, newBudget());
   const canTrain = s.due + learnable > 0;
   const label = s.due ? `Review ${s.due}` : learnable ? `Learn ${learnable} new` : 'Up to date';
+  const trainBtn = !canTrain && s.fresh
+    ? `<button class="btn primary" type="button" data-act="learn-more" data-id="${rep.id}">Learn ${Math.min(moreChunk(), s.fresh)} more</button>`
+    : `<button class="btn ${canTrain ? 'primary' : ''}" type="button" data-act="train" data-id="${rep.id}" ${canTrain ? '' : 'disabled'}>${label}</button>`;
   const next = !s.due && Number.isFinite(s.nextDue) ? `<span>Next review ${when(s.nextDue)}</span>` : '';
   return `
   <li class="rep">
@@ -341,7 +353,7 @@ function repRow({ rep, s }) {
       <p class="meta"><span>${plural(s.positions, 'move')}</span><span class="${s.due ? 'is-due' : ''}">${s.due} due</span><span>${s.fresh} new</span>${next}</p>
     </div>
     <div class="rep-actions">
-      <button class="btn ${canTrain ? 'primary' : ''}" type="button" data-act="train" data-id="${rep.id}" ${canTrain ? '' : 'disabled'}>${label}</button>
+      ${trainBtn}
       <a class="btn" href="#edit-${rep.id}">Edit</a>
       <button class="btn ghost" type="button" data-act="ask-delete" data-id="${rep.id}">Delete</button>
     </div>
@@ -695,13 +707,19 @@ function renderTrainPanel() {
   if (s.done) {
     const next = Math.min(Infinity, ...data.repertoires.map((r) => R.stats(r).nextDue));
     const didSomething = st.reviewed + st.learned > 0;
+    const single = s.queue.length === 1 ? s.queue[0] : null;
+    const pool = single ? [findRep(single)].filter(Boolean) : data.repertoires;
+    const moreLeft = pool.reduce((a, r) => a + R.stats(r).fresh, 0);
     panel.innerHTML = `
       <a class="back" href="#home">← All repertoires</a>
       <p class="eyebrow">Session complete</p>
       <h1 class="panel-title">${didSomething ? 'Done for now' : 'Nothing to train'}</h1>
       ${statsHtml}
       <p class="hint">${Number.isFinite(next) ? `Next review ${esc(when(next))}.` : 'Add more moves to keep training.'}</p>
-      <div class="row"><a class="btn primary" href="#home">Back to repertoires</a></div>`;
+      <div class="row">
+        ${moreLeft ? `<button class="btn primary" type="button" data-act="learn-more" ${single ? `data-id="${single}"` : ''}>Learn ${Math.min(moreChunk(), moreLeft)} more</button>` : ''}
+        <a class="btn ${moreLeft ? '' : 'primary'}" href="#home">Back to repertoires</a>
+      </div>`;
     return;
   }
 
@@ -731,6 +749,12 @@ function renderTrainPanel() {
 
 const actions = {
   'train-all': () => go('train-all'),
+  'learn-more': (el) => {
+    refreshDaily();
+    data.daily.extra = (data.daily.extra || 0) + moreChunk();
+    persist();
+    go(el.dataset.id ? `train-${el.dataset.id}` : 'train-all');
+  },
   train: (el) => go(`train-${el.dataset.id}`),
   'ask-delete': (el) => { ui.pendingDelete = el.dataset.id; renderHome(); },
   delete: (el) => {
