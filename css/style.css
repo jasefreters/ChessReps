@@ -808,3 +808,4 @@ select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-r
   .line-item { grid-template-columns: auto minmax(0, 1fr); }
   .line-item .btn { grid-column: 2; justify-self: start; }
 }
+.level-pips { font-size: 0.8rem; letter-spacing: 0.15em; color: var(--accent); }

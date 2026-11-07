@@ -14,10 +14,13 @@ you miss come back sooner.
 - **Opening library**: search 3,865 named openings by name ("caro kann
   advance"), ECO code ("B12") or moves ("1. e4 c6 2. d4") to start a
   repertoire or add lines to one.
-- **Tactical Weaknesses**: 150 Lichess puzzles in one mixed set, easiest first, with no theme shown (drawn from unprotected
-  pieces, pieces on the same line, exposed king, trapped pieces, overworked
-  defenders, double attacks), with Hint, Solution and Retry. "Add a puzzle"
-  has a setup board for entering your own puzzles; those stay in your browser.
+- **Tactical Weaknesses**: 484 Lichess puzzles in five levels (rated
+  400-799, 800-1099, 1100-1399, 1400-1699, 1700-2000), themes mixed and hidden
+  until solved, then the weakness is named: unprotected pieces, pieces on
+  the same line, exposed king, trapped pieces, overworked defenders,
+  removing the guard, double attacks. Hint, Solution and Retry on every
+  puzzle. "Add a puzzle" has a setup board for entering your own puzzles;
+  those stay in your browser.
 - **Lines, 3 at a time**: each repertoire is split into complete lines,
   ranked so the ones you're most likely to meet come first (ready-made
   repertoires use the amount of named Lichess theory behind each opponent

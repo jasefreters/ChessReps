@@ -29,11 +29,27 @@ const WEAKNESSES = {
   line: { name: 'Pieces on the same line', text: 'Pieces lined up on a rank, file or diagonal invite pins, skewers and discovered attacks.' },
   king: { name: 'Exposed king', text: 'A king with few defenders or no escape squares is open to checks and mating attacks.' },
   trapped: { name: 'Trapped pieces', text: 'A piece with no safe squares can be attacked and won.' },
-  overload: { name: 'Overworked defenders', text: 'A defender doing two jobs can be lured away or removed.' },
+  overload: { name: 'Overworked defenders', text: 'A defender with two jobs can be lured away from one of them.' },
+  guard: { name: 'Removing the guard', text: 'Capture or chase away the piece that defends your target, then take the target.' },
   fork: { name: 'Double attacks', text: 'One move that attacks two targets at once, such as a fork by a knight, queen or pawn.' },
 };
 
 /** Every puzzle in one list, easiest first. Themes stay hidden so each puzzle is a mystery. */
+/** Five levels of challenge, by Lichess puzzle rating. */
+export const LEVELS = [
+  { id: 'l1', name: 'Beginner', lo: 400, hi: 799 },
+  { id: 'l2', name: 'Improving', lo: 800, hi: 1099 },
+  { id: 'l3', name: 'Club', lo: 1100, hi: 1399 },
+  { id: 'l4', name: 'Strong club', lo: 1400, hi: 1699 },
+  { id: 'l5', name: 'Advanced', lo: 1700, hi: 2000 },
+];
+
+function levelPuzzles(sets, levelId) {
+  const lv = LEVELS.find((l) => l.id === levelId);
+  const all = mixed(sets);
+  return lv ? all.filter((p) => p.rating >= lv.lo && p.rating <= lv.hi) : all;
+}
+
 function mixed(sets) {
   const seen = new Set();
   const all = [];
@@ -111,7 +127,7 @@ export function createTactics(ctx) {
         <div class="today-text">
           <p class="eyebrow">Tactical Weaknesses</p>
           <h1>Spot the weakness, then find the forcing move</h1>
-          <p class="sub">There's no label telling you what to look for, just like in a real game. Find what's wrong in your opponent's position, then look for checks, captures and threats. Hint shows which piece to move; Solution plays out the answer.</p>
+          <p class="sub">Choose a level. There's no label telling you what to look for, just like in a real game. Find what's wrong in your opponent's position, then look for checks, captures and threats. Hint shows which piece to move; Solution plays out the answer.</p>
         </div>
       </div>
       <ul class="rep-list" id="tac-sets"><li class="empty">Loading puzzles…</li></ul>
@@ -134,19 +150,23 @@ export function createTactics(ctx) {
     try {
       const sets = await loadSets();
       if (document.getElementById('tac-sets') !== list) return;
-      const all = mixed(sets);
-      const pr = progressFor(all.map((p) => p.id));
-      const pct = Math.round((pr.solved / all.length) * 100);
-      const label = pr.solved ? (pr.solved < all.length ? 'Continue' : 'Practise again') : 'Start';
-      list.innerHTML = `
-        <li class="rep">
+      list.innerHTML = LEVELS.map((lv, i) => {
+        const ps = levelPuzzles(sets, lv.id);
+        if (!ps.length) return '';
+        const pr = progressFor(ps.map((p) => p.id));
+        const pct = Math.round((pr.solved / ps.length) * 100);
+        const label = pr.solved ? (pr.solved < ps.length ? 'Continue' : 'Practise again') : 'Start';
+        return `
+        <li class="rep level-card">
           <div class="rep-main">
-            <h3><a href="#puzzles-all">Mixed puzzles</a></h3>
-            <p class="meta"><span>${plural(all.length, 'puzzle')}</span><span>Rated ${all[0].rating}–${all[all.length - 1].rating}, easiest first</span><span>${pr.solved} solved</span><span>${pr.clean} first try</span></p>
+            <p class="level-pips" aria-hidden="true">${'●'.repeat(i + 1)}${'○'.repeat(LEVELS.length - i - 1)}</p>
+            <h3><a href="#puzzles-${lv.id}">Level ${i + 1} · ${lv.name}</a></h3>
+            <p class="meta"><span>Rated ${lv.lo}–${lv.hi}</span><span>${plural(ps.length, 'puzzle')}</span><span>${pr.solved} solved</span><span>${pr.clean} first try</span></p>
             <div class="bar" role="img" aria-label="${pct}% solved"><span style="width:${pct}%"></span></div>
           </div>
-          <div class="rep-actions"><a class="btn ${pr.solved < all.length ? 'primary' : ''}" href="#puzzles-all">${label}</a></div>
+          <div class="rep-actions"><a class="btn ${pr.solved < ps.length ? 'primary' : ''}" href="#puzzles-${lv.id}">${label}</a></div>
         </li>`;
+      }).join('');
       list.insertAdjacentHTML('afterend', `<p class="hint credit">Puzzles from the <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noopener">Lichess puzzle database</a> (public domain).</p>`);
     } catch {
       if (document.getElementById('tac-sets') === list) {
@@ -176,9 +196,10 @@ export function createTactics(ctx) {
         return;
       }
       if (location.hash !== hash) return;
-      const all = mixed(sets);
-      puzzles = all.map((p, i) => fromLichess(p, i, all.length));
-      name = 'Mixed puzzles';
+      const ps = levelPuzzles(sets, setId);
+      puzzles = ps.map((p, i) => fromLichess(p, i, ps.length));
+      const li = LEVELS.findIndex((l) => l.id === setId);
+      name = li >= 0 ? `Level ${li + 1} · ${LEVELS[li].name}` : 'All levels';
     }
     if (!puzzles.length) return go('tactics');
 

@@ -23,6 +23,6 @@ domain and released under the CC0 1.0 Public Domain Dedication.
 
 ## Puzzles
 
-`data/puzzles.json` is a selection from the Lichess puzzle database
+`data/puzzles.json` is a selection of 484 puzzles from the Lichess puzzle database
 (https://database.lichess.org/#puzzles), released under the CC0 1.0 Public
 Domain Dedication.
