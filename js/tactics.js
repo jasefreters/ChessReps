@@ -137,9 +137,14 @@ export function createTactics(ctx) {
         <p class="hint">Puzzles you add are saved in this browser only and aren't published on the site, so this is the place for puzzles from your own books. They're included in your backup file.</p>
       </div>
       <div class="row">
-        <a class="btn primary" href="#puzzle-new">Add a puzzle</a>
-        ${mine.length ? `<a class="btn" href="#puzzles-mine">Solve my puzzles</a><span class="hint">${mine.length} added · ${mineProg.solved} solved</span>` : ''}
+        ${mine.length ? `<a class="btn primary" href="#puzzles-mine">Solve my puzzles</a>` : ''}
+        <a class="btn ${mine.length ? '' : 'primary'}" href="#puzzle-new">Add a puzzle</a>
+        <a class="btn" href="#puzzle-paste">Paste puzzles</a>
+        ${mine.length ? `<button class="btn ghost" type="button" data-tac="mp-export">Export</button>` : ''}
+        <label class="btn ghost file-btn">Import<input type="file" id="mp-import" accept=".json,application/json" hidden></label>
       </div>
+      ${mine.length ? `<p class="hint">${mine.length} added · ${mineProg.solved} solved</p>` : ''}
+      <p class="form-msg" id="mp-msg" role="status"></p>
       ${mine.length ? `<ul class="my-puzzles">${mine.map((p) => `
         <li><span>${esc(p.title || 'Untitled puzzle')}</span>
           <button class="btn ghost small" type="button" data-tac="delete" data-id="${esc(p.id)}">${s && s.confirm === p.id ? 'Confirm delete' : 'Delete'}</button></li>`).join('')}
@@ -521,6 +526,192 @@ export function createTactics(ctx) {
     }
   }
 
+  // ------------------------------------------------------------ paste puzzles
+
+  const ALIASES = [
+    ['guard', /guard|remov|capturing ?defender/],
+    ['overload', /overload|overwork|deflect|attract|decoy/],
+    ['trapped', /trap/],
+    ['fork', /fork|double/],
+    ['line', /line|pin|skewer|discover|x-?ray/],
+    ['king', /king|mate|back ?rank/],
+    ['hanging', /hang|unprotect|undefend|loose/],
+  ];
+  function weaknessFrom(tag) {
+    const t = (tag || '').toLowerCase();
+    if (!t) return null;
+    const hit = ALIASES.find(([, re]) => re.test(t));
+    return hit ? hit[0] : null;
+  }
+
+  /** Solution text -> move tokens: drops move numbers, commas and annotations. */
+  function solutionTokens(text) {
+    return text.replace(/,/g, ' ').split(/\s+/)
+      .map((t) => t.replace(/^\d+\.+/, '').replace(/[!?]+$/, '').replace(/^0-0-0/, 'O-O-O').replace(/^0-0/, 'O-O'))
+      .filter((t) => t && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
+  }
+
+  /**
+   * One line: "Name | FEN | solution | weakness". Returns { puzzle } or { error }.
+   * If your next move follows directly after your previous one (the opponent's
+   * reply is left out), a reply that allows it is filled in and noted.
+   */
+  function parsePuzzleLine(text) {
+    const parts = text.split('|').map((x) => x.trim());
+    if (parts.length < 3) return { error: 'Needs at least three parts: name | FEN | solution.' };
+    const [title, fenRaw, sol, tag] = parts;
+    const fields = fenRaw.split(/\s+/);
+    if (!/^([1-8pnbrqkPNBRQK]+\/){7}[1-8pnbrqkPNBRQK]+$/.test(fields[0] || '')) {
+      return { error: "The second part doesn't look like a FEN. It should start like rnbqkbnr/pppppppp/8/… with eight rows separated by /." };
+    }
+    const fen = fields.length === 4 ? `${fenRaw} 0 1` : fields.length === 2 ? `${fenRaw} - - 0 1` : fenRaw;
+    let c;
+    try {
+      c = new Chess(fen);
+    } catch (err) {
+      return { error: `The FEN couldn't be read: ${err.message}` };
+    }
+    const start = c.fen();
+    const you = c.turn();
+    const tokens = solutionTokens(sol);
+    if (!tokens.length) return { error: 'No solution moves found.' };
+    const line = [];
+    const notes = [];
+    for (const san of tokens) {
+      let mv = null;
+      try { mv = c.move(san); } catch { mv = null; }
+      if (!mv && c.turn() !== you) {
+        // Opponent's reply left out: find one that lets this move be played.
+        for (const reply of c.moves({ verbose: true })) {
+          const trial = new Chess(c.fen());
+          trial.move(reply);
+          try {
+            trial.move(san);
+            c.move(reply);
+            line.push(reply.from + reply.to + (reply.promotion || ''));
+            notes.push(`assumed reply ${reply.san}`);
+            mv = c.move(san);
+            break;
+          } catch { /* try the next reply */ }
+        }
+      }
+      if (!mv) return { error: `"${san}" isn't a legal move there. Check the FEN (and who is to move) and the moves.` };
+      line.push(mv.from + mv.to + (mv.promotion || ''));
+    }
+    if (c.turn() === you) {
+      // Ends on an opponent move: drop it, the puzzle ends on your move.
+      line.pop();
+    }
+    if (!line.length) return { error: 'The solution has no moves for the side to move.' };
+    return {
+      puzzle: { title: title || 'Untitled puzzle', fen: start, line, weakness: weaknessFrom(tag) },
+      notes,
+      unknownTag: tag && !weaknessFrom(tag) ? tag : null,
+    };
+  }
+
+  function renderPaste() {
+    s = { kind: 'paste' };
+    const names = Object.values(WEAKNESSES).map((w) => w.name).join(', ');
+    app.innerHTML = `
+    <section class="home paste-page">
+      <a class="back" href="#tactics">← Tactical Weaknesses</a>
+      <div class="section-head">
+        <h1 class="panel-title">Paste puzzles</h1>
+        <p class="hint">One puzzle per line: <strong>name | FEN | solution | weakness</strong>. Puzzles are saved in this browser only, never on the public site. Use Export and Import to copy them to another device.</p>
+      </div>
+      <div class="card paste-help">
+        <p class="label">Example</p>
+        <pre class="paste-example">Ch1 P1 | 6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1 | 1. Rd8# | king
+Ch1 P2 | r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3 | 1. Bb5 a6 2. Bxc6 | line</pre>
+        <ul class="hint paste-notes">
+          <li>The FEN sets who is to move. Copy it from the Lichess board editor (lichess.org/editor) after setting up the diagram.</li>
+          <li>Include your opponent's replies. If you leave one out (1. Nxe4, 2. Bxa1), a legal reply is filled in for you and noted.</li>
+          <li>Weakness is optional: ${esc(names)}. Short words work too, such as pin, fork, trapped, mate, guard.</li>
+        </ul>
+      </div>
+      <div class="field">
+        <label for="pp-text">Your puzzles</label>
+        <textarea id="pp-text" rows="10" spellcheck="false" autocomplete="off" placeholder="Name | FEN | solution | weakness"></textarea>
+      </div>
+      <div class="row">
+        <button class="btn primary" type="button" data-tac="pp-add">Add puzzles</button>
+        <a class="btn ghost" href="#tactics">Done</a>
+      </div>
+      <div id="pp-report" class="paste-report" role="status"></div>
+    </section>`;
+  }
+
+  function addPasted() {
+    const box = document.getElementById('pp-text');
+    const report = document.getElementById('pp-report');
+    const lines = box.value.split(/\r?\n/);
+    const data = getData();
+    const keep = [];
+    const out = [];
+    let added = 0;
+    lines.forEach((raw, i) => {
+      const text = raw.trim();
+      if (!text || text.startsWith('#')) return;
+      const res = parsePuzzleLine(text);
+      if (res.error) {
+        keep.push(raw);
+        out.push(`<li class="bad">Line ${i + 1}: ${esc(res.error)}</li>`);
+        return;
+      }
+      data.myPuzzles.push({ id: `my-${Math.random().toString(36).slice(2, 10)}`, ...res.puzzle, created: Date.now() });
+      added++;
+      const extra = [...res.notes, res.unknownTag ? `weakness "${res.unknownTag}" not recognised, left blank` : ''].filter(Boolean);
+      out.push(`<li class="good">Added ${esc(res.puzzle.title)}${extra.length ? ` (${esc(extra.join('; '))})` : ''}</li>`);
+    });
+    if (added) persist();
+    box.value = keep.join('\n');
+    report.innerHTML = out.length
+      ? `<p><strong>${plural(added, 'puzzle')} added.</strong>${keep.length ? ` ${plural(keep.length, 'line')} left in the box to fix.` : ''}</p><ul>${out.join('')}</ul>
+         ${added ? '<p><a class="btn primary" href="#puzzles-mine">Solve my puzzles</a></p>' : ''}`
+      : '<p>Nothing to add yet. Paste one puzzle per line.</p>';
+    if (added) toast(`${plural(added, 'puzzle')} added`);
+  }
+
+  function exportMine() {
+    const data = getData();
+    const text = JSON.stringify({ type: 'book-moves-puzzles', version: 1, puzzles: data.myPuzzles }, null, 1);
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `my-puzzles-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`Exported ${plural(data.myPuzzles.length, 'puzzle')}`);
+  }
+
+  async function importMine(file) {
+    const msg = document.getElementById('mp-msg');
+    try {
+      const json = JSON.parse(await file.text());
+      const list = Array.isArray(json) ? json : json && Array.isArray(json.puzzles) ? json.puzzles : null;
+      if (!list) throw new Error("This file doesn't contain puzzles. Use a file made with Export.");
+      const data = getData();
+      const have = new Set(data.myPuzzles.map((p) => p.id));
+      let added = 0;
+      let skipped = 0;
+      for (const p of list) {
+        if (!p || typeof p.fen !== 'string' || !Array.isArray(p.line)) { skipped++; continue; }
+        try { new Chess(p.fen); } catch { skipped++; continue; }
+        if (have.has(p.id)) { skipped++; continue; }
+        data.myPuzzles.push({ id: typeof p.id === 'string' ? p.id : `my-${Math.random().toString(36).slice(2, 10)}`, title: String(p.title || ''), weakness: p.weakness || null, fen: p.fen, line: p.line.map(String), created: p.created || Date.now() });
+        added++;
+      }
+      persist();
+      renderIndex();
+      toast(`Imported ${plural(added, 'puzzle')}${skipped ? `, skipped ${skipped} already here or unreadable` : ''}`);
+    } catch (err) {
+      if (msg) msg.textContent = err instanceof SyntaxError ? "That file isn't valid JSON. Use a file made with Export." : err.message;
+    }
+  }
+
   // ------------------------------------------------------------ events
 
   const handlers = {
@@ -599,6 +790,8 @@ export function createTactics(ctx) {
       board.setPieces(s.pieces);
       renderEditorPanel();
     },
+    'pp-add': () => addPasted(),
+    'mp-export': () => exportMine(),
     'ed-save': () => {
       const title = document.getElementById('pe-title').value.trim();
       const data = getData();
@@ -621,9 +814,15 @@ export function createTactics(ctx) {
     const el = e.target.closest('[data-tac]');
     if (!el || el.disabled) return;
     const fn = handlers[el.dataset.tac];
-    if (fn && (s || el.dataset.tac === 'delete')) fn(el);
+    if (fn && (s || ['delete', 'mp-export'].includes(el.dataset.tac))) fn(el);
   });
   app.addEventListener('change', (e) => {
+    if (e.target.id === 'mp-import' && e.target.files && e.target.files[0]) {
+      const f = e.target.files[0];
+      e.target.value = '';
+      importMine(f);
+      return;
+    }
     if (s && s.kind === 'editor' && e.target.name === 'pe-side') s.side = e.target.value;
     if (s && s.kind === 'editor' && e.target.id === 'pe-weak') s.weakness = e.target.value;
   });
@@ -631,5 +830,5 @@ export function createTactics(ctx) {
     if (s && s.kind === 'editor' && e.target.id === 'pe-title') s.title = e.target.value;
   });
 
-  return { renderIndex, renderSet, renderEditor, cleanup };
+  return { renderIndex, renderSet, renderEditor, renderPaste, cleanup };
 }

@@ -19,7 +19,9 @@ you miss come back sooner.
   until solved, then the weakness is named: unprotected pieces, pieces on
   the same line, exposed king, trapped pieces, overworked defenders,
   removing the guard, double attacks. Hint, Solution and Retry on every
-  puzzle. "Add a puzzle" has a setup board for entering your own puzzles;
+  puzzle. "Add a puzzle" (setup board) and "Paste puzzles" (one per line:
+  name | FEN | solution | weakness) add your own puzzles, with Export and
+  Import to move them between devices;
   those stay in your browser.
 - **Lines, 3 at a time**: each repertoire is split into complete lines,
   ranked so the ones you're most likely to meet come first (ready-made

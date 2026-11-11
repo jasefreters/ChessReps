@@ -145,6 +145,7 @@ function route() {
   });
   if (h === 'tactics') tactics.renderIndex();
   else if (h === 'puzzle-new') tactics.renderEditor();
+  else if (h === 'puzzle-paste') tactics.renderPaste();
   else if (h.startsWith('puzzles-')) tactics.renderSet(h.slice(8));
   else if (h.startsWith('edit-')) renderEdit(h.slice(5));
   else if (h.startsWith('lines-')) renderLines(h.slice(6));

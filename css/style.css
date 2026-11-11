@@ -809,3 +809,10 @@ select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-r
   .line-item .btn { grid-column: 2; justify-self: start; }
 }
 .level-pips { font-size: 0.8rem; letter-spacing: 0.15em; color: var(--accent); }
+.paste-page { gap: 14px; max-width: 760px; }
+.paste-help { display: grid; gap: 8px; padding: 14px 16px; }
+.paste-example { margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); font: 500 0.78rem/1.6 var(--font-mono); overflow-x: auto; white-space: pre; }
+.paste-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.paste-report ul { margin: 6px 0 10px; padding-left: 18px; display: grid; gap: 3px; font-size: 0.88rem; }
+.paste-report .good { color: var(--good); }
+.paste-report .bad { color: var(--bad); }
